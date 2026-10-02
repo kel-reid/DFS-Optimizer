@@ -6,6 +6,19 @@ Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solve
 
 ---
 
+## Branches
+
+* **`main`**: Production-ready, stable baseline pipeline.
+* **`feature/auto-detection`**: Multi-site pipeline featuring automated file name signature detection, DraftKings support, and dynamic directory scanning.
+
+To switch between branches:
+```bash
+git checkout main                   # Switch to stable FanDuel baseline
+git checkout feature/auto-detection # Switch to multi-site auto-detection branch
+```
+
+---
+
 ## Project Directory Structure
 
 ```
@@ -28,7 +41,7 @@ dfs-optimizer/
 |   |-- generate_mock_fanduel_data.py    # Mock FanDuel test generator
 |   \-- generate_mock_draftkings_data.py # Mock DraftKings test generator
 |-- run.py             # Top-level pipeline launcher (auto-detects site)
-|-- build_fanduel_lineups.py   # Top-level runner wrapper
+|-- build_fanduel_lineups.py   # Auto-detecting wrapper entry point
 |-- requirements.txt   # Python package dependencies
 \-- README.md          # Documentation & workflow guide
 ```
@@ -37,14 +50,27 @@ dfs-optimizer/
 
 ## Intelligent Site Auto-Detection
 
-The engine automatically detects whether you are solving for **FanDuel** or **DraftKings** by inspecting the file name signatures of files placed in `data/players/` and `data/templates/`:
+The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags:
 
-* **DraftKings Signatures**: File names containing `DKSalaries`, `DKEntries`, `DraftKings`, `dk_`, or `dk-`.
-  * Triggers the **$50,000 salary cap**, Full PPR scoring, and `DST` roster mapping.
-* **FanDuel Signatures**: File names containing `FanDuel`, `players-list`, `entries-upload-template`, `fd_`, or `fd-`.
-  * Triggers the **$60,000 salary cap**, Half-PPR scoring, and `DEF` roster mapping.
+### Signature Detection Rules
 
-You can also explicitly specify the site via the `--site` flag:
+| Platform | Keyword Signatures | Prefix Match | Activated Rules |
+| :--- | :--- | :--- | :--- |
+| **DraftKings** | `DKSalaries`, `DKEntries`, `DraftKings`, `dk_`, `dk-`, `dk `, `dk.` | `dk*` (e.g. `dkcontest.csv`) | **$50,000 Cap**, Full PPR, `QB/2RB/3WR/TE/FLEX/DST` |
+| **FanDuel** | `FanDuel`, `players-list`, `entries-upload-template`, `fd_`, `fd-`, `fd `, `fd.` | `fd*` (e.g. `fdcontest.csv`) | **$60,000 Cap**, Half-PPR, `QB/2RB/3WR/TE/FLEX/DEF` |
+
+### Resolution Hierarchy
+
+1. **Explicit Flag**: `--site fanduel` or `--site draftkings` overrides all automatic detection.
+2. **Explicit Paths**: Inspects file names passed to `--template-csv` or `--players-csv`.
+3. **Template Directory**: Inspects `data/templates/` (the target contest entries template is prioritized).
+4. **Player Directory**: Inspects `data/players/` (player pricing and projection files).
+5. **Data Root**: Inspects files dropped directly into `data/`.
+6. **CSV Content Fallback**: If file names are generic (e.g. `salaries.csv`), inspects headers for site tokens:
+   * DraftKings: `DST`, `TeamAbbrev`, `AvgPointsPerGame`.
+   * FanDuel: `DEF`, `FPPG`, `Injury Indicator`, `Nickname`.
+
+You can always override auto-detection using the `--site` flag:
 ```bash
 python run.py                   # Auto-detects site from file name signatures
 python run.py --site fanduel    # Explicit FanDuel run
@@ -55,13 +81,13 @@ python run.py --site draftkings # Explicit DraftKings run
 
 ## The 3-Step Routine (Each Contest / Week)
 
-| Step | Action | Location |
+| Step | Action | Target Location |
 | :--- | :--- | :--- |
-| **1. Player List** | Drop your site's player list CSV into: | `data/players/` |
-| **2. Contest Template** | Drop your reserved contest entries template into: | `data/templates/` |
+| **1. Player List** | Drop your site's player list CSV into: | `data/players/` (or `data/`) |
+| **2. Contest Template** | Drop your reserved contest entries template into: | `data/templates/` (or `data/`) |
 | **3. Run Optimizer** | Execute the runner command: | `python run.py` |
 
-The completed, upload-ready file will automatically be created in:
+The populated, upload-ready file will be generated in:
 `data/output/Completed-<template-name>.csv`
 
 ---
@@ -127,13 +153,16 @@ python run.py \
 git clone https://github.com/kel-reid/DFS-Optimizer.git
 cd DFS-Optimizer
 
-# 2. Create virtual environment
+# 2. Checkout feature branch (or main)
+git checkout feature/auto-detection
+
+# 3. Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. Install dependencies
+# 4. Install dependencies
 pip install -r requirements.txt
 
-# 4. Run optimization
+# 5. Run optimization
 python run.py
 ```
