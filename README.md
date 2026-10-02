@@ -1,21 +1,8 @@
-# NFL DFS Multi-Site Optimization Tool (FanDuel & DraftKings)
+# NFL DFS Optimization Tool for FanDuel & DraftKings
 
-A quantitative Python optimization pipeline for generating mass multi-entry (MME) tournament lineups for FanDuel and DraftKings NFL DFS contests.
+A quantitative optimization pipeline for generating MME tournament lineups for FanDuel and DraftKings NFL DFS contests.
 
 Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend) and `pandas`.
-
----
-
-## Branches
-
-* **`main`**: Production-ready, stable baseline pipeline.
-* **`feature/auto-detection`**: Multi-site pipeline featuring automated file name signature detection, DraftKings support, and dynamic directory scanning.
-
-To switch between branches:
-```bash
-git checkout main                   # Switch to stable FanDuel baseline
-git checkout feature/auto-detection # Switch to multi-site auto-detection branch
-```
 
 ---
 
@@ -40,7 +27,9 @@ dfs-optimizer/
 |-- scripts/
 |   |-- generate_mock_fanduel_data.py    # Mock FanDuel test generator
 |   \-- generate_mock_draftkings_data.py # Mock DraftKings test generator
-|-- run.py             # Top-level pipeline launcher (auto-detects site)
+|-- run_optimizer.py   # Primary pipeline launcher (auto-detects site)
+|-- run_optimizer      # Executable terminal launcher (./run_optimizer)
+|-- run.py             # Launcher alias (forwards to run_optimizer.py)
 |-- build_fanduel_lineups.py   # Auto-detecting wrapper entry point
 |-- requirements.txt   # Python package dependencies
 \-- README.md          # Documentation & workflow guide
@@ -70,11 +59,14 @@ The engine automatically inspects file name signatures in `data/templates/`, `da
    * DraftKings: `DST`, `TeamAbbrev`, `AvgPointsPerGame`.
    * FanDuel: `DEF`, `FPPG`, `Injury Indicator`, `Nickname`.
 
-You can always override auto-detection using the `--site` flag:
+You can run the optimizer with auto-detection or override it via `--site`:
 ```bash
-python run.py                   # Auto-detects site from file name signatures
-python run.py --site fanduel    # Explicit FanDuel run
-python run.py --site draftkings # Explicit DraftKings run
+python run_optimizer.py                   # Auto-detects site from file name signatures
+python run_optimizer.py --site fanduel    # Explicit FanDuel run
+python run_optimizer.py --site draftkings # Explicit DraftKings run
+
+# Or simply execute the direct launcher:
+./run_optimizer
 ```
 
 ---
@@ -85,7 +77,7 @@ python run.py --site draftkings # Explicit DraftKings run
 | :--- | :--- | :--- |
 | **1. Player List** | Drop your site's player list CSV into: | `data/players/` (or `data/`) |
 | **2. Contest Template** | Drop your reserved contest entries template into: | `data/templates/` (or `data/`) |
-| **3. Run Optimizer** | Execute the runner command: | `python run.py` |
+| **3. Run Optimizer** | Execute the runner command: | `python run_optimizer.py` (or `./run_optimizer`) |
 
 The populated, upload-ready file will be generated in:
 `data/output/Completed-<template-name>.csv`
@@ -126,7 +118,7 @@ The populated, upload-ready file will be generated in:
 ## CLI Options & Customization
 
 ```bash
-python run.py \
+python run_optimizer.py \
   [--site {auto,fanduel,draftkings}] \
   [--players-csv data/players/my-players.csv] \
   [--template-csv data/templates/my-contest.csv] \
@@ -164,5 +156,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 5. Run optimization
-python run.py
+python run_optimizer.py
+# or simply:
+./run_optimizer
 ```
