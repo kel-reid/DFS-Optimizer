@@ -460,7 +460,7 @@ class PortfolioAuditor:
                 logger.error("  - %s", v)
             raise AssertionError("Portfolio failed strict risk/correlation audit.")
 
-        logger.info("✓ ALL CONSTRAINTS STRICTLY SATISFIED:")
+        logger.info("ALL CONSTRAINTS STRICTLY SATISFIED:")
         logger.info("  - 100%% of lineups comply with $60,000 salary cap.")
         logger.info("  - Primary Stacks: %d / %d (%.1f%%) lineups feature QB + WR/TE stack.",
                     stacked_count, total_lineups, (stacked_count / total_lineups) * 100)
@@ -481,7 +481,7 @@ class PortfolioAuditor:
         for pid, count in player_counts.most_common(15):
             pct = (count / total_lineups) * 100
             name_str = player_names.get(pid, pid)
-            bar = "█" * int(pct / 2.5)
+            bar = "#" * int(pct / 2.5)
             logger.info("  %-35s : %3d / %3d (%5.1f%%) | %s", name_str, count, total_lineups, pct, bar)
 
         # Display Starting QB Distribution
@@ -489,7 +489,7 @@ class PortfolioAuditor:
         logger.info("STARTING QB EXPOSURE DISTRIBUTION:")
         for qb_name, count in qb_counts.most_common():
             pct = (count / total_lineups) * 100
-            bar = "▓" * int(pct / 2)
+            bar = "=" * int(pct / 2)
             logger.info("  QB %-28s : %3d lineups (%5.1f%%) | %s", qb_name, count, pct, bar)
 
         # Display Metrics Summary
@@ -559,8 +559,8 @@ class FanDuelTemplateExporter:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path, index=False)
-        logger.info("✓ Export successfully written to: %s", output_path.resolve())
-        logger.info("✓ Total entries exported: %d valid rows (strictly 151 lines with header).", len(df))
+        logger.info("Export successfully written to: %s", output_path.resolve())
+        logger.info("Total entries exported: %d valid rows (strictly 151 lines with header).", len(df))
         return output_path
 
 

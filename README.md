@@ -1,36 +1,36 @@
 # FanDuel NFL DFS Optimization Tool
 
-A quantitative, production-grade Python optimization pipeline for generating and exporting mass multi-entry (MME) tournament lineups for FanDuel NFL Classic Main Slates.
+A quantitative Python optimization pipeline for generating MME tournament lineups for FanDuel NFL DFS contests.
 
 Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend) and `pandas`.
 
 ---
 
-## 📁 Project Directory Structure
+## Project Directory Structure
 
 ```
 dfs-optimizer/
-├── data/
-│   ├── players/       # 🏈 Official FanDuel player pool CSVs (*players-list.csv)
-│   │   └── FanDuel-NFL-2026 EDT-10 EDT-04 EDT-134747-players-list.csv
-│   ├── templates/     # 📥 Reserved FanDuel contest entry templates (*entries-upload-template.csv)
-│   │   └── FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv
-│   └── output/        # 🚀 Upload-ready completed CSVs (strictly 151 lines, 13 columns)
-│       └── Completed-FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv
-├── src/
-│   ├── __init__.py
-│   └── build_fanduel_lineups.py   # Core ILP solver, stacking logic & export engine
-├── scripts/
-│   └── generate_mock_fanduel_data.py  # Realistic mock test slate generator
-├── run.py             # 🎯 Top-level pipeline launcher
-├── build_fanduel_lineups.py   # Top-level runner wrapper
-├── requirements.txt   # Python package dependencies
-└── README.md          # Documentation & workflow guide
+|-- data/
+|   |-- players/       # Official FanDuel player pool CSVs (*players-list.csv)
+|   |   \-- FanDuel-NFL-2026 EDT-10 EDT-04 EDT-134747-players-list.csv
+|   |-- templates/     # Reserved FanDuel contest entry templates (*entries-upload-template.csv)
+|   |   \-- FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv
+|   \-- output/        # Upload-ready completed CSVs (strictly 151 lines, 13 columns)
+|       \-- Completed-FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv
+|-- src/
+|   |-- __init__.py
+|   \-- build_fanduel_lineups.py   # Core ILP solver, stacking logic & export engine
+|-- scripts/
+|   \-- generate_mock_fanduel_data.py  # Realistic mock test slate generator
+|-- run.py             # Top-level pipeline launcher
+|-- build_fanduel_lineups.py   # Top-level runner wrapper
+|-- requirements.txt   # Python package dependencies
+\-- README.md          # Documentation & workflow guide
 ```
 
 ---
 
-## ⚡ The 3-Step Routine (Each Contest / Week)
+## The 3-Step Routine (Each Contest / Week)
 
 | Step | Action | Location |
 | :--- | :--- | :--- |
@@ -43,7 +43,7 @@ The completed, upload-ready file will automatically be created in:
 
 ---
 
-## 🧠 Strategic & Quantitative Constraints
+## Strategic & Quantitative Constraints
 
 1. **Roster Architecture & Salary Cap**:
    - Strictly enforces FanDuel's 9-player Classic format: `[QB, RB, RB, WR, WR, WR, TE, FLEX, DEF]`.
@@ -74,7 +74,7 @@ The completed, upload-ready file will automatically be created in:
 
 ---
 
-## 🛠️ CLI Options & Customization
+## CLI Options & Customization
 
 ```bash
 python run.py \
@@ -108,11 +108,11 @@ python run.py \
 
 ---
 
-## 🚀 Setup & Installation
+## Setup & Installation
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/kel-reid/dfs-optimizer.git
+git clone https://github.com/kel-reid/DFS-Optimizer.git
 cd dfs-optimizer
 
 # 2. Create virtual environment
