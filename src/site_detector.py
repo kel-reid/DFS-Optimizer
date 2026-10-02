@@ -5,13 +5,14 @@ DFS Site Auto-Detection Engine
 ================================================================================
 Identifies whether target contest files belong to FanDuel or DraftKings
 using file name signatures, with CSV header inspection as a robust fallback.
+================================================================================
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 logger = logging.getLogger("DFSSiteDetector")
 
@@ -22,6 +23,8 @@ DRAFTKINGS_NAME_KEYWORDS: Sequence[str] = (
     "draftkings",
     "dk_",
     "dk-",
+    "dk ",
+    "dk.",
 )
 
 FANDUEL_NAME_KEYWORDS: Sequence[str] = (
@@ -30,6 +33,8 @@ FANDUEL_NAME_KEYWORDS: Sequence[str] = (
     "entries-upload-template",
     "fd_",
     "fd-",
+    "fd ",
+    "fd.",
 )
 
 
@@ -39,12 +44,22 @@ def detect_site_from_name(filename: str) -> Optional[str]:
     Returns 'draftkings', 'fanduel', or None if signature is ambiguous.
     """
     lower = filename.lower()
+
+    # Priority 1: Exact keyword or substring matches
     for kw in DRAFTKINGS_NAME_KEYWORDS:
         if kw in lower:
             return "draftkings"
     for kw in FANDUEL_NAME_KEYWORDS:
         if kw in lower:
             return "fanduel"
+
+    # Priority 2: Stem prefixes (e.g. dkcontest.csv, fdcontest.csv)
+    stem = Path(filename).stem.lower()
+    if stem.startswith("dk"):
+        return "draftkings"
+    if stem.startswith("fd"):
+        return "fanduel"
+
     return None
 
 
@@ -77,43 +92,59 @@ def resolve_site(
     Resolves target DFS site:
       1. Respects manual user flag ('fanduel' or 'draftkings') if specified.
       2. Evaluates file name signatures from template and players files.
-      3. Falls back to CSV header token inspection.
-      4. Defaults to 'fanduel' if completely unresolvable.
+      3. Scans data/templates, data/players, and data/ directories for signatures.
+      4. Falls back to CSV header token inspection.
+      5. Defaults to 'fanduel' if completely unresolvable.
+
+    Returns:
+      Site string ('draftkings' or 'fanduel')
     """
     # 1. Manual user override
     if explicit_site and explicit_site.lower() in ("fanduel", "draftkings"):
         site = explicit_site.lower()
-        logger.info("[CONFIG] Site explicitly set to: %s", site.upper())
+        print(f"[CONFIG] Site explicitly set via flag: {site.upper()}")
         return site
 
-    # 2. File Name Signatures
-    files_to_check = [p for p in (template_path, players_path) if p is not None]
-
-    for p in files_to_check:
+    # 2. File Name Signatures from explicitly supplied paths
+    explicit_files = [p for p in (template_path, players_path) if p is not None]
+    for p in explicit_files:
         detected = detect_site_from_name(p.name)
         if detected:
-            logger.info("[AUTO-DETECT] Identified %s from file name signature: '%s'",
-                        detected.upper(), p.name)
+            print(f"[AUTO-DETECT] Identified {detected.upper()} from file name signature: '{p.name}'")
             return detected
 
-    # Also inspect any existing files in data/templates or data/players
-    for scan_dir in (Path("data/templates"), Path("data/players")):
+    # 3. File Name Signatures from standard workspace directories
+    # Check templates first (target contest), then players, then root data dir
+    scan_dirs = (
+        Path("data/templates"),
+        Path("data/players"),
+        Path("data"),
+    )
+    for scan_dir in scan_dirs:
         if scan_dir.exists():
-            for p in scan_dir.glob("*.csv"):
+            for p in sorted(scan_dir.glob("*.csv")):
+                # Skip completed output files
+                if p.name.startswith("Completed-"):
+                    continue
                 detected = detect_site_from_name(p.name)
                 if detected:
-                    logger.info("[AUTO-DETECT] Identified %s from folder file signature: '%s'",
-                                detected.upper(), p.name)
+                    print(f"[AUTO-DETECT] Identified {detected.upper()} from file name signature: '{p.name}' ({scan_dir})")
                     return detected
 
-    # 3. Content Inspection Fallback
-    for p in files_to_check:
+    # 4. Content Inspection Fallback
+    all_files_to_inspect = list(explicit_files)
+    for scan_dir in scan_dirs:
+        if scan_dir.exists():
+            for p in scan_dir.glob("*.csv"):
+                if not p.name.startswith("Completed-") and p not in all_files_to_inspect:
+                    all_files_to_inspect.append(p)
+
+    for p in all_files_to_inspect:
         detected = detect_site_from_content(p)
         if detected:
-            logger.info("[AUTO-DETECT] Identified %s from CSV header inspection: '%s'",
-                        detected.upper(), p.name)
+            print(f"[AUTO-DETECT] Identified {detected.upper()} from CSV header tokens: '{p.name}'")
             return detected
 
-    # 4. Default
-    logger.info("[AUTO-DETECT] No distinct signature detected. Defaulting to: FANDUEL")
+    # 5. Default
+    print("[AUTO-DETECT] No distinct signature detected. Defaulting to: FANDUEL")
     return "fanduel"
