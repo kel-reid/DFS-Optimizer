@@ -123,6 +123,9 @@ python run_optimizer.py \
   [--players-csv data/players/my-players.csv] \
   [--template-csv data/templates/my-contest.csv] \
   [--output-csv data/output/my-completed.csv] \
+  [--num-candidates 500] \
+  [--num-field 10000] \
+  [--num-trials 5000] \
   [--num-lineups 150] \
   [--stack-ratio 0.80] \
   [--max-qb-exposure 0.25] \
