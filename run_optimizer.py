@@ -6,22 +6,37 @@ NFL DFS Multi-Site Optimization Launcher (run_optimizer.py)
 Generates 150 correlated, risk-controlled tournament lineups for FanDuel and
 DraftKings with intelligent file name signature auto-detection:
 
-  python run_optimizer.py                   # Auto-detects site from file name signatures
-  python run_optimizer.py --site fanduel    # Forces FanDuel optimization pipeline
-  python run_optimizer.py --site draftkings # Forces DraftKings optimization pipeline
+  python3 run_optimizer.py                  # Auto-detects site and auto-uses .venv
+  python3 run_optimizer.py --site fanduel   # Forces FanDuel optimization pipeline
+  python3 run_optimizer.py --site draftkings# Forces DraftKings optimization pipeline
 
 Or via executable script:
   ./run_optimizer
 ================================================================================
 """
 
+import os
 import sys
-import argparse
 from pathlib import Path
 
-# Ensure src module is discoverable
-sys.path.insert(0, str(Path(__file__).parent))
+# -----------------------------------------------------------------------------
+# Auto-Environment Bootstrapper
+# Automatically uses .venv if executed with system python without active venv
+# -----------------------------------------------------------------------------
+project_dir = Path(__file__).parent.resolve()
+venv_dir = project_dir / ".venv"
+venv_python = venv_dir / "bin" / "python"
 
+if venv_python.exists() and sys.prefix != str(venv_dir):
+    try:
+        os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+    except Exception:
+        pass
+
+# Ensure src module is discoverable
+sys.path.insert(0, str(project_dir))
+
+import argparse
 from src.site_detector import resolve_site
 
 
