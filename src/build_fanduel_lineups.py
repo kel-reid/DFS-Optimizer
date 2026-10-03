@@ -496,6 +496,11 @@ class CorrelatedGameEngine:
         self.teams: List[str] = sorted(list({p.team for p in players if p.team}))
         self.team_to_idx = {t: idx for idx, t in enumerate(self.teams)}
         self.player_team_indices = np.array([self.team_to_idx.get(p.team, -1) for p in players], dtype=np.int32)
+        self.player_opp_indices = np.full(self.P, -1, dtype=np.int32)
+        for i, p in enumerate(players):
+            if p.game_info and p.game_info.home_team and p.game_info.away_team:
+                opp_team = p.game_info.away_team if p.team == p.game_info.home_team else p.game_info.home_team
+                self.player_opp_indices[i] = self.team_to_idx.get(opp_team, -1)
 
     def simulate_game_trials(self) -> np.ndarray:
         """
@@ -553,13 +558,19 @@ class CorrelatedGameEngine:
         team_z = rng.standard_normal(size=(num_teams, T)).astype(np.float32)
         team_factors = np.exp(sigma_team * team_z - 0.5 * (sigma_team ** 2))
 
-        # Apply team factor to offensive players
+        # Apply team offensive shocks to skill players and inverse opponent shock to defenses
         sim_points = np.copy(base_draws)
         for i in range(P):
             if self.players[i].fppg > 0.0:
-                t_idx = self.player_team_indices[i]
-                if t_idx >= 0:
-                    sim_points[i, :] *= team_factors[t_idx, :]
+                if "D" in self.players[i].positions:
+                    opp_t_idx = self.player_opp_indices[i]
+                    if opp_t_idx >= 0:
+                        opp_shock = np.exp(-sigma_team * team_z[opp_t_idx, :] - 0.5 * (sigma_team ** 2))
+                        sim_points[i, :] *= opp_shock
+                else:
+                    t_idx = self.player_team_indices[i]
+                    if t_idx >= 0:
+                        sim_points[i, :] *= team_factors[t_idx, :]
 
         return sim_points
 
