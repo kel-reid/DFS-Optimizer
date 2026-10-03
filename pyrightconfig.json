@@ -1,9 +1,20 @@
 {
-  "venvPath": "/Users/kelreid/Projects/dfs-optimizer",
+  "venvPath": ".",
   "venv": ".venv",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        ".",
+        "src",
+        ".venv/lib/python3.14/site-packages"
+      ]
+    }
+  ],
   "extraPaths": [
-    "/Users/kelreid/Projects/dfs-optimizer",
-    "/Users/kelreid/Projects/dfs-optimizer/.venv/lib/python3.14/site-packages"
+    ".",
+    "src",
+    ".venv/lib/python3.14/site-packages"
   ],
   "reportMissingImports": "none",
   "reportMissingTypeStubs": false

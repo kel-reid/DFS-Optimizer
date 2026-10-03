@@ -36,3 +36,13 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 pythonpath = ["."]
+
+[tool.pyright]
+include = ["src", "tests", "scripts", "run_optimizer.py"]
+venvPath = "."
+venv = ".venv"
+executionEnvironments = [
+  { root = "." }
+]
+reportMissingImports = "none"
+reportMissingTypeStubs = false
