@@ -45,7 +45,7 @@ import math
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import pandas as pd
 from pydfs_lineup_optimizer import (
@@ -58,6 +58,7 @@ from pydfs_lineup_optimizer import (
     Sport,
     get_optimizer,
 )
+from pydfs_lineup_optimizer.player import LineupPlayer
 
 # -----------------------------------------------------------------------------
 # Logging Configuration
@@ -286,7 +287,7 @@ class DraftKingsLineupPipeline:
         if n_unconstrained == 0:
             return stacked_lineups
 
-        usage_phase1: Counter[Player] = Counter()
+        usage_phase1: Counter[Any] = Counter()
         for l in stacked_lineups:
             for p in l.lineup:
                 usage_phase1[p] += 1
@@ -362,9 +363,9 @@ class DraftKingsPortfolioAuditor:
             if salary > config.salary_cap:
                 violations.append(f"Lineup #{idx}: Exceeded salary cap (${salary} > ${config.salary_cap})")
 
-            qb_player: Optional[Player] = None
-            dst_player: Optional[Player] = None
-            offensive_players: List[Player] = []
+            qb_player: Optional[LineupPlayer] = None
+            dst_player: Optional[LineupPlayer] = None
+            offensive_players: List[LineupPlayer] = []
 
             for p in lineup.lineup:
                 player_counts[p.id] += 1
@@ -402,7 +403,7 @@ class DraftKingsPortfolioAuditor:
                     )
 
         # Exposure Cap Validation
-        def get_cap(player: Player) -> int:
+        def get_cap(player: Union[Player, LineupPlayer]) -> int:
             n = total_lineups
             positions = set(player.positions)
             if "DST" in positions or "D" in positions:

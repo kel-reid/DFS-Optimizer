@@ -96,9 +96,9 @@ def mock_fanduel_files(tmp_path: Path):
             })
 
     with open(players_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+        dict_writer = csv.DictWriter(f, fieldnames=fieldnames)
+        dict_writer.writeheader()
+        dict_writer.writerows(rows)
 
     # 10 Entry Template
     template_header = [
@@ -110,9 +110,9 @@ def mock_fanduel_files(tmp_path: Path):
         template_rows.append([f"E-{1000 + i}", "C-500", "NFL $100K", "$0.05", "", "", "", "", "", "", "", "", ""])
 
     with open(template_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(template_header)
-        writer.writerows(template_rows)
+        template_writer = csv.writer(f)
+        template_writer.writerow(template_header)
+        template_writer.writerows(template_rows)
 
     config = SimOptimizerConfig(
         players_csv=players_csv,
@@ -141,6 +141,6 @@ def mock_projections_csv(tmp_path: Path):
         ["Chiefs D/ST", "KC", "D/ST", "9.5"],
     ]
     with open(proj_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerows(data)
+        proj_writer = csv.writer(f)
+        proj_writer.writerows(data)
     return proj_path
