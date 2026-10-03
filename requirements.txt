@@ -1,3 +1,5 @@
 pydfs-lineup-optimizer>=3.6.1
 pandas>=2.2.0
+numpy>=1.26.0
 pulp>=2.4
+pyyaml>=6.0

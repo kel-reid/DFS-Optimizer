@@ -33,6 +33,7 @@ if venv_python.exists() and sys.prefix != str(venv_dir):
 sys.path.insert(0, str(project_dir))
 
 import argparse
+
 from src.site_detector import resolve_site
 
 
@@ -41,6 +42,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--players-csv", type=Path, default=None)
     parser.add_argument("--template-csv", type=Path, default=None)
+    parser.add_argument("--projections-csv", type=Path, default=None)
     args, _ = parser.parse_known_args()
 
     site = resolve_site(
