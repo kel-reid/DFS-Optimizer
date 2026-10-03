@@ -437,7 +437,7 @@ class DraftKingsPortfolioAuditor:
 # Template Exporter
 # -----------------------------------------------------------------------------
 class DraftKingsTemplateExporter:
-    """Maps 150 optimized rosters into DraftKings CSV upload format."""
+    """Maps 150 optimized rosters into DraftKings CSV upload format without column mangling."""
 
     ROSTER_SLOTS = ("QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DST")
 
@@ -448,15 +448,25 @@ class DraftKingsTemplateExporter:
         template_path = self.config.template_csv
         output_path = self.config.output_csv
 
-        if template_path.exists():
-            df = pd.read_csv(template_path)
-            # Slice strictly to required lineup count
-            df = df.iloc[:self.config.num_lineups].copy()
-        else:
-            # Generate clean default DK template dataframe
-            headers = ["Entry ID", "Contest ID", "Contest Name", "Entry Fee"] + list(self.ROSTER_SLOTS)
-            rows = [[str(i), "0", "NFL Classic Contest", "0.00"] + [""] * 9 for i in range(1, len(lineups) + 1)]
-            df = pd.DataFrame(rows, columns=headers)
+        if not template_path.exists():
+            raise FileNotFoundError(f"DraftKings contest template not found: {template_path.resolve()}")
+
+        logger.info("Reading DraftKings reserved entries template: %s", template_path)
+
+        with open(template_path, "r", newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            rows = []
+            for row in reader:
+                if row and any(field.strip() for field in row):
+                    rows.append(row)
+                if len(rows) == self.config.num_lineups:
+                    break
+
+        if len(rows) != len(lineups):
+            raise ValueError(
+                f"Row mismatch: Template has {len(rows)} reserved entries, but {len(lineups)} lineups were generated."
+            )
 
         # Slot indices 4 to 12
         for i, lineup in enumerate(lineups):
@@ -465,12 +475,18 @@ class DraftKingsTemplateExporter:
                     val = f"{p.full_name} ({p.id})"
                 else:
                     val = str(p.id)
-                df.iat[i, slot_idx] = val
+                while len(rows[i]) <= slot_idx:
+                    rows[i].append("")
+                rows[i][slot_idx] = val
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(output_path, index=False)
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(rows)
+
         logger.info("Export successfully written to: %s", output_path.resolve())
-        logger.info("Total entries exported: %d valid rows.", len(df))
+        logger.info("Total entries exported: %d valid rows with preserved template headers.", len(rows))
         return output_path
 
 

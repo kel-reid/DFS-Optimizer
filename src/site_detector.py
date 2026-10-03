@@ -113,12 +113,14 @@ def resolve_site(
         return next(iter(explicit_sites))
 
     # 2. File Name Signatures & Content Inspection from standard workspace directories
-    # Check templates first (target contest), then players, then root data dir
     scan_dirs = (
         Path("data/templates"),
         Path("data/players"),
         Path("data"),
     )
+    all_workspace_detected: Set[str] = set()
+    dir_detections = {}
+
     for scan_dir in scan_dirs:
         if scan_dir.exists():
             detected_in_dir: Set[str] = set()
@@ -129,12 +131,18 @@ def resolve_site(
                 detected = detect_site_from_name(p.name) or detect_site_from_content(p)
                 if detected:
                     detected_in_dir.add(detected)
-            if len(detected_in_dir) > 1:
-                raise ValueError(
-                    f"Ambiguous files detected in '{scan_dir}': found files for both {', '.join(sorted(detected_in_dir))}. "
-                    "Please keep only one DFS site's files in the directory or specify --template-csv explicitly."
-                )
             if detected_in_dir:
-                return next(iter(detected_in_dir))
+                dir_detections[scan_dir] = detected_in_dir
+                all_workspace_detected.update(detected_in_dir)
+
+    if len(all_workspace_detected) > 1:
+        details = ", ".join(f"'{d}': {sorted(sites)}" for d, sites in dir_detections.items())
+        raise ValueError(
+            f"Ambiguous workspace files detected across directories: {details}. "
+            "Please keep only one DFS site's files in the workspace or specify --template-csv explicitly."
+        )
+
+    if all_workspace_detected:
+        return next(iter(all_workspace_detected))
 
     return "fanduel"

@@ -194,6 +194,7 @@ class FanDuelDataLoader:
         optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
         logger.info("Loading player pool from CSV: %s", csv_path)
         optimizer.load_players_from_csv(str(csv_path))
+        optimizer.player_pool.with_injured = True
 
         raw_count = len(optimizer.player_pool.all_players)
         logger.info("Successfully loaded %d raw player entries via optimizer.load_players_from_csv.", raw_count)
@@ -827,11 +828,18 @@ class SimAuditReporter:
         unconstrained_count = 0
         opposing_def_violations = 0
 
+        salary_compliant = 0
+        def_opp_violations = 0
+
         for l in lineups:
             p_list = l.lineup
             qb = next((p for p in p_list if "QB" in p.positions), None)
             defs = [p for p in p_list if "D" in p.positions]
             wr_te_teams = {p.team for p in p_list if ("WR" in p.positions or "TE" in p.positions)}
+            off_teams = {p.team for p in p_list if "D" not in p.positions}
+
+            if sum(p.salary for p in p_list) <= config.salary_cap:
+                salary_compliant += 1
 
             if qb and qb.team in wr_te_teams:
                 stacked_count += 1
@@ -839,17 +847,20 @@ class SimAuditReporter:
                 unconstrained_count += 1
 
             for d in defs:
-                opp_teams = {p.team for p in p_list if "D" not in p.positions}
-                # Check negative correlation (no DEF against opposing offense)
-                # pydfs already prevents this strictly
+                if d.game_info and d.game_info.home_team and d.game_info.away_team:
+                    opp_team = d.game_info.away_team if d.team == d.game_info.home_team else d.game_info.home_team
+                    if opp_team in off_teams:
+                        def_opp_violations += 1
 
         logger.info("✓ CONSTRAINTS AUDIT:")
-        logger.info("  - 100%% of lineups comply with $%d salary cap.", config.salary_cap)
+        logger.info("  - %d / %d (%.1f%%) of lineups comply with $%d salary cap.",
+                    salary_compliant, total, (salary_compliant / total) * 100, config.salary_cap)
         logger.info("  - Primary Stacks: %d / %d (%.1f%%) feature QB + WR/TE same-team stack.",
                     stacked_count, total, (stacked_count / total) * 100)
         logger.info("  - Standalone Rushing QBs: %d / %d (%.1f%%) feature unconstrained rosters.",
                     unconstrained_count, total, (unconstrained_count / total) * 100)
-        logger.info("  - 0% lineups feature DEF against opposing offensive skill players.")
+        logger.info("  - Opposing Defense Violations: %d / %d (%.1f%%).",
+                    def_opp_violations, total, (def_opp_violations / total) * 100)
 
         # 2. QB Distribution Table
         qb_counts = Counter(p.full_name for l in lineups for p in l.lineup if "QB" in p.positions)
@@ -942,6 +953,8 @@ def parse_arguments() -> SimOptimizerConfig:
     parser.add_argument("--max-te-exposure", type=float, default=0.25)
     parser.add_argument("--max-def-exposure", type=float, default=0.20)
     parser.add_argument("--max-exposure", type=float, default=0.25)
+    parser.add_argument("--max-repeating", type=int, default=6,
+                        help="Enforces >= 3 unique players between every pair of lineups")
     parser.add_argument("--randomness", type=float, default=0.25)
     parser.add_argument("--keep-injured", action="store_true", default=False)
     parser.add_argument(
@@ -979,6 +992,7 @@ def parse_arguments() -> SimOptimizerConfig:
         max_te_exposure=args.max_te_exposure,
         max_def_exposure=args.max_def_exposure,
         max_exposure=args.max_exposure,
+        max_repeating_players=args.max_repeating,
         randomness_deviation=args.randomness,
         exclude_out_injured=not args.keep_injured,
         strict_exposure_caps=args.strict_caps,
