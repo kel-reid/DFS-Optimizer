@@ -53,14 +53,21 @@ def find_projections_csv(explicit_path: Optional[Path] = None) -> Optional[Path]
     return None
 
 
-def apply_forward_projections(optimizer: LineupOptimizer, proj_path: Path) -> Tuple[int, int]:
+def apply_forward_projections(
+    optimizer: LineupOptimizer,
+    proj_path: Path,
+    zero_unprojected: bool = False,
+) -> Tuple[int, int]:
     """
     Loads weekly forward-looking projections and overwrites backward-looking historical
-    FPPG values for all players and team defenses.
+    FPPG values for matched players and team defenses.
 
-    Unprojected bench / inactive players are set to 0.0 to prevent selection anomalies.
+    If zero_unprojected is False (default), players not present in the projection file
+    retain their baseline values, allowing partial projection files (e.g. QB-only updates)
+    to merge cleanly. If True, unprojected players are zeroed out.
+
     Returns:
-        (updated_count, zeroed_count)
+        (updated_count, unprojected_count)
     """
     logger.info("Applying forward-looking projections from: %s", proj_path)
     proj_df = pd.read_csv(proj_path)
@@ -98,14 +105,13 @@ def apply_forward_projections(optimizer: LineupOptimizer, proj_path: Path) -> Tu
             player_map[normalize_name(p_val)] = val
 
     updated_count = 0
-    zeroed_count = 0
+    untouched_count = 0
 
     for player in optimizer.player_pool.all_players:
         is_def = "D" in player.positions or player.positions == ["D"]
         if is_def:
             d_key = normalize_name(player.full_name)
             t_key = normalize_name(player.team) if player.team else ""
-            # Check full name, team code, and word components (e.g. "chiefs")
             found = False
             for cand in [d_key, t_key] + d_key.split():
                 if cand in def_map:
@@ -114,19 +120,23 @@ def apply_forward_projections(optimizer: LineupOptimizer, proj_path: Path) -> Tu
                     found = True
                     break
             if not found:
-                logger.warning("Defense %s not found in projections.", player.full_name)
+                if zero_unprojected:
+                    player.fppg = 0.0
+                untouched_count += 1
         else:
             k = normalize_name(player.full_name)
             if k in player_map:
                 player.fppg = player_map[k]
                 updated_count += 1
             else:
-                player.fppg = 0.0
-                zeroed_count += 1
+                if zero_unprojected:
+                    player.fppg = 0.0
+                untouched_count += 1
 
     logger.info(
-        "Successfully updated forward-looking projections for %d active players/defenses (%d unprojected set to 0.0).",
+        "Successfully updated forward-looking projections for %d active players/defenses (%d retained baseline / zeroed=%s).",
         updated_count,
-        zeroed_count,
+        untouched_count,
+        zero_unprojected,
     )
-    return updated_count, zeroed_count
+    return updated_count, untouched_count

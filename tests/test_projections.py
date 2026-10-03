@@ -45,10 +45,10 @@ def test_apply_forward_projections(mock_fanduel_files, mock_projections_csv):
     optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
     optimizer.load_players_from_csv(str(players_csv))
 
-    updated, zeroed = apply_forward_projections(optimizer, mock_projections_csv)
+    updated, unprojected = apply_forward_projections(optimizer, mock_projections_csv)
 
     assert updated > 0
-    assert zeroed > 0
+    assert unprojected > 0
 
     player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
 
@@ -58,8 +58,13 @@ def test_apply_forward_projections(mock_fanduel_files, mock_projections_csv):
     assert player_dict.get("BUF QB1") == 22.0
     # Defense updated (p.full_name for defense is 'KC Chiefs')
     assert player_dict.get("KC Chiefs") == 9.5
-    # Unprojected players should be zeroed
-    assert player_dict.get("PHI QB1") == 0.0
+    # Unprojected players should retain baseline FPPG by default (PHI QB1 has baseline 20.0)
+    assert player_dict.get("PHI QB1") == 20.0
+
+    # With zero_unprojected=True, unprojected players should be zeroed
+    apply_forward_projections(optimizer, mock_projections_csv, zero_unprojected=True)
+    player_dict_zeroed = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+    assert player_dict_zeroed.get("PHI QB1") == 0.0
 
 
 if __name__ == "__main__":

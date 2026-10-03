@@ -127,8 +127,9 @@ class FanDuelDataLoader:
 
         if self.config.projections_csv and self.config.projections_csv.exists():
             self._apply_external_projections(optimizer, self.config.projections_csv)
-        else:
-            self._filter_backup_quarterbacks(optimizer)
+        self._filter_backup_quarterbacks(optimizer)
+
+
         return optimizer
 
     def _prune_inactive_players(self, optimizer: LineupOptimizer, csv_path: Path) -> None:
