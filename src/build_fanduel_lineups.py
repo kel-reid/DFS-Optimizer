@@ -598,8 +598,9 @@ class CorrelatedGameEngine:
         cand_scores = candidates_matrix @ sim_points    # (500, 5000)
         field_scores = field_matrix @ sim_points        # (10000, 5000)
 
-        # Sort field scores column-wise for fast binary search ranking
-        sorted_field = np.sort(field_scores, axis=0)    # (10000, 5000)
+        # Sort field scores in-place column-wise for fast binary search without duplicate memory allocation
+        field_scores.sort(axis=0)
+        sorted_field = field_scores
 
         # Normalized GPP payout structure based on finish percentiles:
         #   * Top 0.01% (1st place tier): 10,000x entry fee
