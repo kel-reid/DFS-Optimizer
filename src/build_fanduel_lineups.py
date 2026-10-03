@@ -402,6 +402,8 @@ class OpponentFieldSimulator:
         field_matrix_list: List[np.ndarray] = []
         collected = 0
         t0 = time.time()
+        max_attempts = 100
+        consecutive_empty = 0
 
         while collected < M:
             cur_batch = min(batch_size, (M - collected) * 2)
@@ -453,6 +455,7 @@ class OpponentFieldSimulator:
 
             valid_rosters = rosters[valid_salary_mask]
             if len(valid_rosters) > 0:
+                consecutive_empty = 0
                 needed = M - collected
                 take_rosters = valid_rosters[:needed]
 
@@ -461,6 +464,13 @@ class OpponentFieldSimulator:
                 np.put_along_axis(batch_mat, take_rosters, 1.0, axis=1)
                 field_matrix_list.append(batch_mat)
                 collected += len(take_rosters)
+            else:
+                consecutive_empty += 1
+                if consecutive_empty >= max_attempts:
+                    raise RuntimeError(
+                        f"Could not sample opponent field lineups within salary interval "
+                        f"[${self.config.min_field_salary}, ${self.config.salary_cap}]. Check player pool salaries."
+                    )
 
         field_matrix = np.vstack(field_matrix_list)
         return field_matrix

@@ -92,6 +92,7 @@ class DKOptimizerConfig:
     randomness_deviation: float = 0.25  # ±25% Monte Carlo ceiling projection variance
     stack_ratio: float = 0.80        # 80% primary stacked (120 lineups) / 20% unconstrained (30 lineups)
     id_format: str = "name_id"       # "name_id" ("Josh Allen (123456)") or "id_only" ("123456")
+    exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
 
 
 # -----------------------------------------------------------------------------
@@ -174,6 +175,9 @@ class DraftKingsDataLoader:
         logger.info("Successfully loaded %d raw player entries via optimizer.load_players_from_csv.",
                     len(optimizer.player_pool.all_players))
 
+        if self.config.exclude_out_injured:
+            self._prune_inactive_players(optimizer, csv_path)
+
         # Filter backup QBs
         zeroed_count = 0
         for p in optimizer.player_pool.all_players:
@@ -186,6 +190,40 @@ class DraftKingsDataLoader:
             logger.info("Pre-solve filter: Zeroed out projected FPPG for %d non-starting backup QBs.", zeroed_count)
 
         return optimizer
+
+    def _prune_inactive_players(self, optimizer: LineupOptimizer, csv_path: Path) -> None:
+        """Prunes confirmed inactive/IR players while preserving Questionable starters."""
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            logger.warning("Could not read %s for injury pruning: %s", csv_path, e)
+            return
+
+        inactive_indicators = {"IR", "O", "D", "PUP", "Out", "Injured Reserve", "Doubtful"}
+        indicator_col = None
+        for col in ["Injury Indicator", "Status", "Injury Status"]:
+            if col in df.columns:
+                indicator_col = col
+                break
+
+        if not indicator_col:
+            return
+
+        inactive_df = df[df[indicator_col].astype(str).str.strip().isin(inactive_indicators)]
+        id_col = "ID" if "ID" in df.columns else "Id" if "Id" in df.columns else None
+        if not id_col:
+            return
+
+        inactive_ids = set(inactive_df[id_col].astype(str))
+        removed_count = 0
+        for player in list(optimizer.player_pool.all_players):
+            if str(player.id) in inactive_ids:
+                optimizer.player_pool.remove_player(player)
+                removed_count += 1
+
+        if removed_count > 0:
+            logger.info("Pruned %d confirmed inactive/IR players (retained active & Questionable pool: %d players).",
+                        removed_count, len(optimizer.player_pool.all_players))
 
 
 # -----------------------------------------------------------------------------
@@ -457,6 +495,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     parser.add_argument("--max-exposure", type=float, default=0.25)
     parser.add_argument("--randomness", type=float, default=0.25)
     parser.add_argument("--max-repeating", type=int, default=6)
+    parser.add_argument("--keep-injured", action="store_true", help="Keep injured/questionable/out players in player pool")
 
     args, _ = parser.parse_known_args()
 
@@ -484,6 +523,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         max_te_exposure=args.max_te_exposure,
         max_def_exposure=args.max_def_exposure,
         max_repeating_players=args.max_repeating,
+        exclude_out_injured=not args.keep_injured,
     )
 
 

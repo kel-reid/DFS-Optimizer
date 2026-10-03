@@ -84,33 +84,31 @@ def detect_site_from_content(path: Path) -> Optional[str]:
 
 
 def resolve_site(
-    explicit_site: Optional[str] = None,
     players_path: Optional[Path] = None,
     template_path: Optional[Path] = None,
 ) -> str:
     """
     Resolves target DFS site:
-      1. Respects manual user flag ('fanduel' or 'draftkings') if specified.
-      2. Evaluates file name signatures from template and players files.
-      3. Scans data/templates, data/players, and data/ directories for signatures.
-      4. Falls back to CSV header token inspection.
-      5. Defaults to 'fanduel' if completely unresolvable.
+      1. Evaluates file name signatures and CSV headers from explicitly supplied files.
+      2. Scans data/templates, data/players, and data/ directories for signatures.
+      3. Falls back to CSV header token inspection on workspace directories.
+      4. Defaults to 'fanduel' if completely unresolvable.
 
     Returns:
       Site string ('draftkings' or 'fanduel')
     """
-    # 1. Manual user override
-    if explicit_site and explicit_site.lower() in ("fanduel", "draftkings"):
-        return site
-
-    # 2. File Name Signatures from explicitly supplied paths
+    # 1. Signatures and content inspection from explicitly supplied paths
     explicit_files = [p for p in (template_path, players_path) if p is not None]
     for p in explicit_files:
         detected = detect_site_from_name(p.name)
         if detected:
             return detected
+    for p in explicit_files:
+        detected = detect_site_from_content(p)
+        if detected:
+            return detected
 
-    # 3. File Name Signatures from standard workspace directories
+    # 2. File Name Signatures from standard workspace directories
     # Check templates first (target contest), then players, then root data dir
     scan_dirs = (
         Path("data/templates"),
@@ -127,17 +125,14 @@ def resolve_site(
                 if detected:
                     return detected
 
-    # 4. Content Inspection Fallback
-    all_files_to_inspect = list(explicit_files)
+    # 3. Content Inspection Fallback on workspace files
     for scan_dir in scan_dirs:
         if scan_dir.exists():
-            for p in scan_dir.glob("*.csv"):
-                if not p.name.startswith("Completed-") and p not in all_files_to_inspect:
-                    all_files_to_inspect.append(p)
-
-    for p in all_files_to_inspect:
-        detected = detect_site_from_content(p)
-        if detected:
-            return detected
+            for p in sorted(scan_dir.glob("*.csv")):
+                if p.name.startswith("Completed-"):
+                    continue
+                detected = detect_site_from_content(p)
+                if detected:
+                    return detected
 
     return "fanduel"

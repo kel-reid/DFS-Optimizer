@@ -50,20 +50,17 @@ The engine automatically inspects file name signatures in `data/templates/`, `da
 
 ### Resolution Hierarchy
 
-1. **Explicit Flag**: `--site fanduel` or `--site draftkings` overrides all automatic detection.
-2. **Explicit Paths**: Inspects file names passed to `--template-csv` or `--players-csv`.
-3. **Template Directory**: Inspects `data/templates/` (the target contest entries template is prioritized).
-4. **Player Directory**: Inspects `data/players/` (player pricing and projection files).
-5. **Data Root**: Inspects files dropped directly into `data/`.
-6. **CSV Content Fallback**: If file names are generic (e.g. `salaries.csv`), inspects headers for site tokens:
+1. **Explicit Paths**: Inspects file names and CSV headers passed directly to `--template-csv` or `--players-csv`.
+2. **Template Directory**: Inspects `data/templates/` (the target contest entries template is prioritized).
+3. **Player Directory**: Inspects `data/players/` (player pricing and projection files).
+4. **Data Root**: Inspects files dropped directly into `data/`.
+5. **CSV Content Fallback**: If file names are generic (e.g. `salaries.csv`), inspects headers for site tokens:
    * DraftKings: `DST`, `TeamAbbrev`, `AvgPointsPerGame`.
    * FanDuel: `DEF`, `FPPG`, `Injury Indicator`, `Nickname`.
 
-You can run the optimizer with auto-detection or override it via `--site`:
+You can simply run the optimizer and it will automatically detect the site from your template or player files:
 ```bash
 python run_optimizer.py                   # Auto-detects site from file name signatures
-python run_optimizer.py --site fanduel    # Explicit FanDuel run
-python run_optimizer.py --site draftkings # Explicit DraftKings run
 
 # Or simply execute the direct launcher:
 ./run_optimizer
@@ -145,7 +142,6 @@ The Monte Carlo simulation pipeline parameterizes scale across three distinct ma
 
 ```bash
 python run_optimizer.py \
-  [--site {auto,fanduel,draftkings}] \
   [--players-csv data/players/my-players.csv] \
   [--template-csv data/templates/my-contest.csv] \
   [--output-csv data/output/my-completed.csv] \

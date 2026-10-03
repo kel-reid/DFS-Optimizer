@@ -7,11 +7,7 @@ Generates 150 correlated, risk-controlled tournament lineups for FanDuel and
 DraftKings with intelligent file name signature auto-detection:
 
   python3 run_optimizer.py                  # Auto-detects site and auto-uses .venv
-  python3 run_optimizer.py --site fanduel   # Forces FanDuel optimization pipeline
-  python3 run_optimizer.py --site draftkings# Forces DraftKings optimization pipeline
-
-Or via executable script:
-  ./run_optimizer
+  ./run_optimizer                           # Executable shortcut
 ================================================================================
 """
 
@@ -41,15 +37,13 @@ from src.site_detector import resolve_site
 
 
 def main() -> None:
-    # Inspect --site and file arguments without conflicting with site-specific CLI arguments
+    # Parse file arguments without conflicting with site-specific CLI arguments
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--site", choices=["auto", "fanduel", "draftkings"], default="auto")
     parser.add_argument("--players-csv", type=Path, default=None)
     parser.add_argument("--template-csv", type=Path, default=None)
     args, _ = parser.parse_known_args()
 
     site = resolve_site(
-        explicit_site=None if args.site == "auto" else args.site,
         players_path=args.players_csv,
         template_path=args.template_csv,
     )
