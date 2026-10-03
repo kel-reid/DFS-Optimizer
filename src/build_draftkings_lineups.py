@@ -307,11 +307,19 @@ class DraftKingsLineupPipeline:
             else:
                 player.max_exposure = min(1.0, remaining / n_unconstrained)
 
+        stacked_sets = [set(p.id for p in l.lineup) for l in stacked_lineups]
+        max_rep = self.config.max_repeating_players
+
         unconstrained_lineups: List[Lineup] = []
-        for i, lineup in enumerate(opt_unconstrained.optimize(n=n_unconstrained), start=1):
+        for lineup in opt_unconstrained.optimize(n=n_unconstrained * 2):
+            l_set = set(p.id for p in lineup.lineup)
+            if any(len(l_set & s_set) > max_rep for s_set in stacked_sets):
+                continue
             unconstrained_lineups.append(lineup)
-            if i % 15 == 0 or i == n_unconstrained:
-                logger.info("... Solved %d / %d unconstrained lineups ...", i, n_unconstrained)
+            if len(unconstrained_lineups) % 15 == 0 or len(unconstrained_lineups) == n_unconstrained:
+                logger.info("... Solved %d / %d unconstrained lineups ...", len(unconstrained_lineups), n_unconstrained)
+            if len(unconstrained_lineups) == n_unconstrained:
+                break
 
         combined = stacked_lineups + unconstrained_lineups
         logger.info("Successfully assembled %d total lineups (%d stacked + %d unconstrained).",
@@ -393,6 +401,31 @@ class DraftKingsPortfolioAuditor:
                         f"Lineup #{idx}: DST violation! {dst_player.full_name} rostered with opposing: {', '.join(opp_names)}"
                     )
 
+        # Exposure Cap Validation
+        def get_cap(player: Player) -> int:
+            n = total_lineups
+            positions = set(player.positions)
+            if "DST" in positions or "D" in positions:
+                return math.floor(n * config.max_def_exposure)
+            elif "QB" in positions:
+                return math.floor(n * config.max_qb_exposure)
+            elif "RB" in positions:
+                return math.floor(n * config.max_rb_exposure)
+            elif "WR" in positions:
+                return math.floor(n * config.max_wr_exposure)
+            elif "TE" in positions:
+                return math.floor(n * config.max_te_exposure)
+            return math.floor(n * config.max_exposure)
+
+        player_obj_map = {p.id: p for l in lineups for p in l.lineup}
+        for pid, count in player_counts.items():
+            p = player_obj_map[pid]
+            cap = get_cap(p)
+            if count > cap:
+                violations.append(
+                    f"Exposure cap exceeded for {p.full_name} ({p.lineup_position}): {count} lineups > cap of {cap}"
+                )
+
         if violations:
             logger.error("AUDIT FAILED WITH %d VIOLATIONS:", len(violations))
             for v in violations[:10]:
@@ -401,6 +434,7 @@ class DraftKingsPortfolioAuditor:
 
         logger.info("ALL CONSTRAINTS STRICTLY SATISFIED:")
         logger.info("  - 100%% of lineups comply with $50,000 salary cap.")
+        logger.info("  - 100%% of player exposures comply with position caps.")
         logger.info("  - Primary Stacks: %d / %d (%.1f%%) lineups feature QB + WR/TE stack.",
                     stacked_count, total_lineups, (stacked_count / total_lineups) * 100)
         logger.info("  - Unconstrained:  %d / %d (%.1f%%) lineups feature unconstrained rushing QBs.",

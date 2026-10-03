@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Generates realistic mock DraftKings NFL Classic data for offline testing:
-  - data/players/DKSalaries.csv
-  - data/templates/DKEntries.csv (150 reserved entry rows)
+  - data/players/DKSalaries-mock.csv
+  - data/templates/DKEntries-mock.csv (150 reserved entry rows)
 """
 
 import csv

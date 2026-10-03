@@ -305,11 +305,22 @@ class CandidatePoolGenerator:
             for p in opt_unconstrained.player_pool.all_players:
                 p.max_exposure = 0.35
 
+            phase1_sets = [set(p.id for p in c.lineup) for c in candidates]
+            max_rep = self.config.max_repeating_players
+
             t1 = time.time()
-            for i, lineup in enumerate(opt_unconstrained.optimize(n=n_unconstrained), start=1):
+            solved_unconstrained = 0
+            for lineup in opt_unconstrained.optimize(n=n_unconstrained * 2):
+                l_set = set(p.id for p in lineup.lineup)
+                if any(len(l_set & p1_set) > max_rep for p1_set in phase1_sets):
+                    continue
                 candidates.append(lineup)
-                if i % 50 == 0 or i == n_unconstrained:
-                    logger.info("... Solved %d / %d unconstrained candidate lineups (%.1fs) ...", i, n_unconstrained, time.time() - t1)
+                solved_unconstrained += 1
+                if solved_unconstrained % 50 == 0 or solved_unconstrained == n_unconstrained:
+                    logger.info("... Solved %d / %d unconstrained candidate lineups (%.1fs) ...",
+                                solved_unconstrained, n_unconstrained, time.time() - t1)
+                if solved_unconstrained == n_unconstrained:
+                    break
 
         logger.info("Successfully generated %d candidate lineups. Building binary matrix...", len(candidates))
 
