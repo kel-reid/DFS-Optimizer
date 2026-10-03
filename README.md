@@ -103,7 +103,7 @@ The populated, upload-ready file will be generated in:
 
 5. **Pre-Solve Injury & Backup QB Filter**:
    * Prunes confirmed `IR`, `O`, `D`, and `PUP` players while retaining active and Questionable (`Q`) starters.
-   * Zeroes out projected points (`FPPG = 0.0`) for non-starting backup QBs (including Case Keenum) so the solver allocates 100% of QB volume exclusively to active starting quarterbacks.
+   * Zeroes out projected points (`FPPG = 0.0`) for non-starting backup QBs so the solver allocates 100% of QB volume exclusively to active starting quarterbacks.
 
 6. **Portfolio Risk & Diversity Controls**:
    * **Position Exposure Ceilings**:
@@ -112,6 +112,32 @@ The populated, upload-ready file will be generated in:
      * Flex Running Backs, Wide Receivers, Tight Ends: Max **25%** (max 37 / 150 lineups)
    * **Monte Carlo Ceiling Diversity**:
      * Applies `RandomFantasyPointsStrategy` with +/- 25.0% stochastic deviation to simulate variance and create an organic, descending exposure curve.
+
+7. **Normalized GPP Percentile Payout Structure**:
+   * Ranks candidates against the field distribution across 5,000 Monte Carlo game trials using `np.searchsorted`.
+   * Uses dynamic finish percentiles adaptable to any contest size and entry fee:
+     * **Top 0.01%** (1st place tier): **10,000x** entry fee
+     * **Top 0.1%** (Elite tier): **500x** entry fee
+     * **Top 1.0%** (High equity tier): **20x** entry fee
+     * **Top 5.0%** (Mid cash tier): **5x** entry fee
+     * **Top 20.0%** (Min-cash line): **1.5x** entry fee
+   * CLI `--entry-fee` parameter (default: 0.05) makes Sim ROI calculation adaptable to any buy-in level.
+
+---
+
+## Simulation Scale & Quantitative Dimension Parameters: (N = 500), (T = 5000), and (K = 150)
+
+The Monte Carlo simulation pipeline parameterizes scale across three distinct mathematical dimensions:
+
+* **N = 500 Candidate Lineups (`--num-candidates`)**:
+  * **Role**: Candidate Pool Size.
+  * **Mechanism**: Rather than solving directly for the final 150 rosters, the MILP solver generates a broad pool of 500 structurally viable, high-ceiling candidates (80% primary stacked, 20% unconstrained rushing QBs). This wide candidate pool provides the search space evaluated in the game simulations.
+* **T = 5,000 Game Slate Trials (`--num-trials`)**:
+  * **Role**: Monte Carlo Slate Realizations.
+  * **Mechanism**: The number of independent, simulated realizations of the full game slate. Each trial models right-skewed player point volatility using Gamma marginal distributions and joint team offensive shocks $\exp(\sigma_{\text{team}} Z_{\text{team}} - 0.5\sigma_{\text{team}}^2)$. All 500 candidate lineups and 10,000 opponent field lineups are scored across all 5,000 game realizations.
+* **K = 150 Portfolio Lineups (`--num-lineups`)**:
+  * **Role**: Target Entry Portfolio Size.
+  * **Mechanism**: The exact number of entries selected and exported to your contest template (default: 150 for standard FanDuel/DraftKings MME tournaments). Stage 4 greedily selects the top K = 150 lineups from the N = 500 candidates based on Simulated ROI while strictly enforcing global position and player exposure ceilings.
 
 ---
 
@@ -123,6 +149,7 @@ python run_optimizer.py \
   [--players-csv data/players/my-players.csv] \
   [--template-csv data/templates/my-contest.csv] \
   [--output-csv data/output/my-completed.csv] \
+  [--entry-fee 0.05] \
   [--num-candidates 500] \
   [--num-field 10000] \
   [--num-trials 5000] \

@@ -377,16 +377,14 @@ class DraftKingsPortfolioAuditor:
         for pid, count in player_counts.most_common(15):
             pct = (count / total_lineups) * 100
             name_str = player_names.get(pid, pid)
-            bar = "#" * int(pct / 2.5)
-            logger.info("  %-35s : %3d / %3d (%5.1f%%) | %s", name_str, count, total_lineups, pct, bar)
+            logger.info("  %-35s : %3d / %3d (%5.1f%%)", name_str, count, total_lineups, pct)
 
         # QB Distribution
         logger.info("-" * 70)
         logger.info("STARTING QB EXPOSURE DISTRIBUTION:")
         for qb_name, count in qb_counts.most_common():
             pct = (count / total_lineups) * 100
-            bar = "=" * int(pct / 2)
-            logger.info("  QB %-28s : %3d lineups (%5.1f%%) | %s", qb_name, count, pct, bar)
+            logger.info("  QB %-28s : %3d lineups (%5.1f%%)", qb_name, count, pct)
 
         avg_sal = sum(salary_list) / len(salary_list)
         avg_fppg = sum(fppg_list) / len(fppg_list)
@@ -413,7 +411,7 @@ class DraftKingsTemplateExporter:
         output_path = self.config.output_csv
 
         if template_path.exists():
-            df = pd.read_csv(template_path, dtype=str)
+            df = pd.read_csv(template_path)
             # Slice strictly to required lineup count
             df = df.iloc[:self.config.num_lineups].copy()
         else:

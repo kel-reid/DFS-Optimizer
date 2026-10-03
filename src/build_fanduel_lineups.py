@@ -29,7 +29,7 @@ Stage 2: Opponent Field Simulation
   - Encodes the field into a binary indicator matrix:
     F in {0, 1}^(10000 x P).
 
-Stage 3: Correlated Game Outcome Engine & Vectorized Scoring
+Stage 3: Vectorized Scoring and Generic Payout Ranking
   - Simulates T = 5,000 independent Monte Carlo game slate trials.
   - Generates a simulated fantasy score matrix:
     S in R^(P x 5000), where each column represents one realization of the slate.
@@ -44,13 +44,20 @@ Stage 3: Correlated Game Outcome Engine & Vectorized Scoring
     * Candidate scores: Y_cand  = C @ S  in R^(500 x 5000)
     * Field scores:     Y_field = F @ S  in R^(10000 x 5000)
   - Fast O(M log M) Tournament Ranking:
-    * For each trial t in {1, ..., T}, ranks each candidate against sorted field scores
-      using vectorized searchsorted lookups.
-    * Maps ranks to the contest payout ladder ($40K Pooch Punt / $0.05 entry fee).
+    * For each trial t in {1, ..., T}, computes candidate finish percentiles across all trials
+      using np.searchsorted against the sorted field distribution.
+    * Uses a normalized GPP payout structure based on finish percentiles:
+      - Top 0.01% (1st place tier): 10,000x entry fee
+      - Top 0.1% (Elite tier): 500x entry fee
+      - Top 1.0% (High equity tier): 20x entry fee
+      - Top 5.0% (Mid cash tier): 5x entry fee
+      - Top 20.0% (Min-cash line): 1.5x entry fee
+  - Adaptable Buy-In Levels:
+    * CLI --entry-fee parameter (defaulting to 0.05) makes Sim ROI calculation adaptable to any buy-in level.
   - Computes summary performance metrics for all 500 candidate lineups:
     * Simulated ROI %: ((Total Prize Won - Total Entry Cost) / Total Entry Cost) * 100
     * 1st Place Win Count: Trials where candidate finished #1 overall in the field.
-    * Top-1% Finish Rate: Percentage of trials where candidate ranked <= top 100.
+    * Top-1% Finish Rate: Percentage of trials where candidate ranked <= top 1%.
 
 Stage 4: Portfolio Selection, Risk Auditing & Template Export
   - Sorts candidates by Simulated ROI descending (secondary sort: Top-1% Rate).
@@ -113,8 +120,8 @@ class SimOptimizerConfig:
     num_sim_trials: int = 5_000      # Number of Monte Carlo game slate realizations (Stage 3)
     num_selected_lineups: int = 150  # Target portfolio size to export (Stage 4)
 
-    # Contest financial parameters ($40K Pooch Punt)
-    entry_fee: float = 0.05          # Entry fee per lineup ($0.05)
+    # Contest financial parameters
+    entry_fee: float = 0.05          # Entry fee per lineup ($0.05 default, CLI configurable)
     salary_cap: int = 60_000         # FanDuel Classic salary cap ($60,000)
     min_field_salary: int = 58_500   # Minimum realistic salary for human field opponents
 
@@ -183,9 +190,8 @@ class FanDuelDataLoader:
         if not csv_path.exists():
             raise FileNotFoundError(f"Player pool CSV not found: {csv_path.resolve()}")
 
-        logger.info("Initializing FanDuel Football Optimizer with PuLP/CBC backend...")
         optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
-        logger.info("Loading player pool directly from CSV: %s", csv_path)
+        logger.info("Loading player pool from CSV: %s", csv_path)
         optimizer.load_players_from_csv(str(csv_path))
 
         raw_count = len(optimizer.player_pool.all_players)
@@ -219,18 +225,10 @@ class FanDuelDataLoader:
         quarterbacks (specifically Case Keenum, Drew Lock, etc.) so only active starters
         are eligible for selection.
         """
-        zeroed_qbs: List[str] = []
         for player in optimizer.player_pool.all_players:
             if "QB" in player.positions:
                 if player.full_name in self.NON_STARTING_BACKUP_QBS or player.full_name == "Case Keenum":
                     player.fppg = 0.0
-                    zeroed_qbs.append(player.full_name)
-
-        logger.info("Pre-solve filter: Zeroed out projected FPPG for %d backup QBs (including Case Keenum):", len(zeroed_qbs))
-        for qb_name in zeroed_qbs[:8]:
-            logger.info("  - %s -> FPPG set to 0.0 (ineligible for selection)", qb_name)
-        if len(zeroed_qbs) > 8:
-            logger.info("  ... and %d more backup QBs zeroed.", len(zeroed_qbs) - 8)
 
 
 # =============================================================================
@@ -263,6 +261,7 @@ class CandidatePoolGenerator:
         n_stacked = round(n_total * ratio)       # 400
         n_unconstrained = n_total - n_stacked    # 100
 
+        print()
         logger.info("=" * 70)
         logger.info("STAGE 1: GENERATING CANDIDATE POOL (N = %d LINEUPS)", n_total)
         logger.info("=" * 70)
@@ -322,8 +321,6 @@ class CandidatePoolGenerator:
                 if col_idx is not None:
                     candidates_matrix[row_idx, col_idx] = 1.0
 
-        logger.info("Constructed candidates_matrix of shape %s (Memory: %.2f MB)",
-                    candidates_matrix.shape, candidates_matrix.nbytes / (1024 * 1024))
         return candidates, candidates_matrix
 
 
@@ -371,9 +368,11 @@ class OpponentFieldSimulator:
         Generates binary matrix field_matrix of shape (M, P).
         """
         M = self.config.num_field_lineups
+        print()
         logger.info("=" * 70)
         logger.info("STAGE 2: SIMULATING OPPONENT FIELD (M = %d LINEUPS)", M)
         logger.info("=" * 70)
+        logger.info("Sampled %s realistic tournament rosters with power-law efficiency weighting.", f"{M:,}")
 
         # Compute power-law selection probabilities based on points-per-dollar efficiency
         alpha = 2.2
@@ -402,8 +401,6 @@ class OpponentFieldSimulator:
         batch_size = int(M * 1.25)
         field_matrix_list: List[np.ndarray] = []
         collected = 0
-
-        logger.info("Sampling realistic tournament rosters with power-law efficiency weighting...")
         t0 = time.time()
 
         while collected < M:
@@ -466,13 +463,11 @@ class OpponentFieldSimulator:
                 collected += len(take_rosters)
 
         field_matrix = np.vstack(field_matrix_list)
-        logger.info("Simulated %d opponent field lineups in %.2fs (Memory: %.2f MB)",
-                    len(field_matrix), time.time() - t0, field_matrix.nbytes / (1024 * 1024))
         return field_matrix
 
 
 # =============================================================================
-# Stage 3: Correlated Game Outcome Engine & Vectorized Scoring
+# Stage 3: Vectorized Scoring and Generic Payout Ranking
 # =============================================================================
 class CorrelatedGameEngine:
     """
@@ -500,10 +495,11 @@ class CorrelatedGameEngine:
         P = self.P
         rng = np.random.default_rng(self.config.random_seed)
 
+        print()
         logger.info("=" * 70)
         logger.info("STAGE 3: CORRELATED GAME OUTCOME ENGINE (T = %d TRIALS)", T)
         logger.info("=" * 70)
-        logger.info("Modeling right-skewed player point distributions with joint covariance...")
+        logger.info("Modeled %s correlated game slate realizations with joint covariance.", f"{T:,}")
         t0 = time.time()
 
         # 1. Base individual player variance (Gamma distributions parameterized by mean and CV)
@@ -553,8 +549,6 @@ class CorrelatedGameEngine:
                 if t_idx >= 0:
                     sim_points[i, :] *= team_factors[t_idx, :]
 
-        logger.info("Constructed correlated sim_points matrix of shape %s in %.2fs (Memory: %.2f MB)",
-                    sim_points.shape, time.time() - t0, sim_points.nbytes / (1024 * 1024))
         return sim_points
 
     def score_and_rank_candidates(
@@ -575,44 +569,43 @@ class CorrelatedGameEngine:
           win_counts: Array of shape (500,) with 1st place win counts
           top1_rates: Array of shape (500,) with Top-1% finish rates (%)
         """
-        logger.info("Executing vectorized BLAS matrix multiplications for tournament scoring...")
         t0 = time.time()
 
         # Matrix multiplications
         cand_scores = candidates_matrix @ sim_points    # (500, 5000)
         field_scores = field_matrix @ sim_points        # (10000, 5000)
-        logger.info("Scored 500 candidates and 10,000 field opponents across 5,000 trials in %.2fs.", time.time() - t0)
 
         # Sort field scores column-wise for fast binary search ranking
-        t1 = time.time()
         sorted_field = np.sort(field_scores, axis=0)    # (10000, 5000)
-        logger.info("Sorted 10,000 x 5,000 field matrix in %.2fs.", time.time() - t1)
 
-        # Contest payout ladder for $40K Pooch Punt ($0.05 entry fee)
-        # Scaled to M = 10,000 entrant tournament with 82% prize pool return:
+        # Normalized GPP payout structure based on finish percentiles:
+        #   * Top 0.01% (1st place tier): 10,000x entry fee
+        #   * Top 0.1% (Elite tier): 500x entry fee
+        #   * Top 1.0% (High equity tier): 20x entry fee
+        #   * Top 5.0% (Mid cash tier): 5x entry fee
+        #   * Top 20.0% (Min-cash line): 1.5x entry fee
         M = self.config.num_field_lineups
         T = self.config.num_sim_trials
         entry_fee = self.config.entry_fee
 
-        payout_ladder = np.zeros(M + 1, dtype=np.float32)
-        payout_ladder[1] = 100.00         # 1st place (2,000x entry fee)
-        payout_ladder[2] = 35.00          # 2nd place (700x entry fee)
-        payout_ladder[3] = 20.00          # 3rd place (400x entry fee)
-        payout_ladder[4:6] = 12.50        # 4th - 5th place
-        payout_ladder[6:11] = 5.00        # 6th - 10th place (100x entry fee)
-        payout_ladder[11:51] = 1.25       # 11th - 50th place
-        payout_ladder[51:101] = 0.50      # 51st - 100th place (Top 1% = 10x entry fee)
-        payout_ladder[101:501] = 0.20     # 101st - 500th place (Top 5% = 4x entry fee)
-        payout_ladder[501:2001] = 0.10    # 501st - 2000th place (Top 20% min-cash = 2x entry fee)
+        payout_ladder = np.zeros(M + 1, dtype=np.float64)
+        ranks_arr = np.arange(M + 1)
+        pct_arr = ranks_arr / M
+
+        # Vectorized tier assignment based on finish percentiles
+        payout_ladder[(ranks_arr >= 1) & (pct_arr <= 0.2000001)] = 1.5 * entry_fee
+        payout_ladder[(ranks_arr >= 1) & (pct_arr <= 0.0500001)] = 5.0 * entry_fee
+        payout_ladder[(ranks_arr >= 1) & (pct_arr <= 0.0100001)] = 20.0 * entry_fee
+        payout_ladder[(ranks_arr >= 1) & (pct_arr <= 0.0010001)] = 500.0 * entry_fee
+        payout_ladder[(ranks_arr == 1) | (pct_arr <= 0.0001001)] = 10_000.0 * entry_fee
+        payout_ladder[0] = 0.0
 
         num_cands = len(cand_scores)
         total_payouts = np.zeros(num_cands, dtype=np.float64)
         win_counts = np.zeros(num_cands, dtype=np.int32)
         top1_counts = np.zeros(num_cands, dtype=np.int32)
 
-        logger.info("Evaluating contest rank placements and ROI across %d trials via searchsorted...", T)
-        t2 = time.time()
-
+        top1_cutoff = max(1, int(round(M * 0.01)))
         for t in range(T):
             sf_col = sorted_field[:, t]
             cs_col = cand_scores[:, t]
@@ -622,17 +615,13 @@ class CorrelatedGameEngine:
 
             total_payouts += payout_ladder[ranks]
             win_counts += (ranks == 1)
-            top1_counts += (ranks <= 100)
-
-        logger.info("Completed tournament ranking in %.2fs.", time.time() - t2)
+            top1_counts += (ranks <= top1_cutoff)
 
         total_entry_cost = T * entry_fee
         sim_roi = ((total_payouts - total_entry_cost) / total_entry_cost) * 100.0
         top1_rates = (top1_counts / T) * 100.0
 
-        logger.info("Candidate Pool Simulation Metrics:")
-        logger.info("  Mean Sim ROI: %.1f%% | Max ROI: %.1f%% | Total 1st Place Wins: %d",
-                    np.mean(sim_roi), np.max(sim_roi), np.sum(win_counts))
+        logger.info("Evaluated candidate rank placements and ROI simulation across %s trials.", f"{T:,}")
         return sim_roi, win_counts, top1_rates
 
 
@@ -663,6 +652,7 @@ class PortfolioSelector:
           Skill (RB, WR, TE): <= 25% (37 lineups)
         """
         K = self.config.num_selected_lineups  # 150
+        print()
         logger.info("=" * 70)
         logger.info("STAGE 4: PORTFOLIO SELECTION & EXPOSURE OPTIMIZATION (K = %d)", K)
         logger.info("=" * 70)
@@ -688,41 +678,52 @@ class PortfolioSelector:
         player_usage: Counter[str] = Counter()
 
         # Pass 1: Strict adherence to all exposure caps
+        selected_indices: Set[int] = set()
         for idx in sort_order:
             lineup = candidates[idx]
-            # Check if adding this lineup violates any player's ceiling
-            violates = False
-            for player in lineup.lineup:
-                cap = get_cap(player)
-                if player_usage[player.full_name] >= cap:
-                    violates = True
-                    break
-
-            if not violates:
+            if all(player_usage[p.full_name] < get_cap(p) for p in lineup.lineup):
                 selected.append(lineup)
-                for player in lineup.lineup:
-                    player_usage[player.full_name] += 1
+                selected_indices.add(idx)
+                for p in lineup.lineup:
+                    player_usage[p.full_name] += 1
                 if len(selected) == K:
                     break
 
-        # Pass 2: If greedy pass had shortfall, incrementally relax caps by +1 to maintain strict distribution
+        # Pass 2: Guaranteed fill to exactly K lineups minimizing exposure cap violations
         if len(selected) < K:
-            logger.info("Pass 1 selected %d / %d lineups under hard caps. Executing controlled relaxation for remaining %d...",
-                        len(selected), K, K - len(selected))
-            slack = 1
-            while len(selected) < K and slack <= 10:
-                for idx in sort_order:
-                    lineup = candidates[idx]
-                    if lineup not in selected:
-                        if all(player_usage[p.full_name] < (get_cap(p) + slack) for p in lineup.lineup):
-                            selected.append(lineup)
-                            for p in lineup.lineup:
-                                player_usage[p.full_name] += 1
-                            if len(selected) == K:
-                                break
-                slack += 1
+            needed = K - len(selected)
+            logger.info("Pass 1 selected %d / %d lineups under hard caps. Selecting remaining %d minimizing cap violations...",
+                        len(selected), K, needed)
+            remaining_indices = [idx for idx in sort_order if idx not in selected_indices]
+            while len(selected) < K and remaining_indices:
+                best_cand_idx = None
+                best_penalty = float("inf")
+                best_roi = -float("inf")
+                best_pos = -1
+
+                for pos, c_idx in enumerate(remaining_indices):
+                    lineup = candidates[c_idx]
+                    overage = sum(max(0, player_usage[p.full_name] + 1 - get_cap(p)) for p in lineup.lineup)
+                    roi = sim_roi[c_idx]
+                    if (overage < best_penalty) or (overage == best_penalty and roi > best_roi):
+                        best_penalty = overage
+                        best_roi = roi
+                        best_cand_idx = c_idx
+                        best_pos = pos
+
+                if best_cand_idx is not None:
+                    lineup = candidates[best_cand_idx]
+                    selected.append(lineup)
+                    selected_indices.add(best_cand_idx)
+                    for p in lineup.lineup:
+                        player_usage[p.full_name] += 1
+                    remaining_indices.pop(best_pos)
+                else:
+                    break
 
         logger.info("Successfully assembled final portfolio of %d lineups.", len(selected))
+        if len(selected) != K:
+            raise ValueError(f"Could not assemble required {K} lineups from candidate pool (assembled {len(selected)}).")
         return selected
 
 
@@ -775,8 +776,7 @@ class FanDuelTemplateExporter:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path, index=False)
-        logger.info("✓ Export successfully written to: %s", output_path.resolve())
-        logger.info("✓ Total entries exported: %d valid rows (strictly 151 lines with header).", len(df))
+        logger.info("✓ Populated and verified %d valid template entries.", len(df))
         return output_path
 
 
@@ -800,6 +800,7 @@ class SimAuditReporter:
             for p in l.lineup:
                 player_counts[p.full_name] += 1
 
+        print()
         logger.info("=" * 70)
         logger.info("PORTFOLIO AUDIT & SIMULATION ANALYSIS (%d LINEUPS)", total)
         logger.info("=" * 70)
@@ -831,18 +832,19 @@ class SimAuditReporter:
                     stacked_count, total, (stacked_count / total) * 100)
         logger.info("  - Standalone Rushing QBs: %d / %d (%.1f%%) feature unconstrained rosters.",
                     unconstrained_count, total, (unconstrained_count / total) * 100)
-        logger.info("  - 0%% lineups feature DEF against opposing offensive skill players.")
+        logger.info("  - 0% lineups feature DEF against opposing offensive skill players.")
 
         # 2. QB Distribution Table
         qb_counts = Counter(p.full_name for l in lineups for p in l.lineup if "QB" in p.positions)
+        print()
         logger.info("-" * 70)
         logger.info("STARTING QB EXPOSURE DISTRIBUTION:")
         for qb_name, count in qb_counts.most_common():
             pct = (count / total) * 100
-            bar = "=" * int(pct / 2)
-            logger.info("  QB %-28s : %3d lineups (%5.1f%%) | %s", qb_name, count, pct, bar)
+            logger.info("  QB %-28s : %3d lineups (%5.1f%%)", qb_name, count, pct)
 
         # 3. Top Exposures Table
+        print()
         logger.info("-" * 70)
         logger.info("POST-SIMULATION TOP 15 PLAYER EXPOSURES:")
         for name, count in player_counts.most_common(15):
@@ -850,32 +852,18 @@ class SimAuditReporter:
             p_obj = player_info.get(name)
             team = p_obj.team if p_obj else "NFL"
             pos = "/".join(p_obj.positions) if p_obj else "POS"
-            bar = "#" * int(pct / 2.5)
-            logger.info("  %-25s (%s - %s) : %3d / %3d (%5.1f%%) | %s", name, team, pos, count, total, pct, bar)
+            logger.info("  %-25s (%s - %s) : %3d / %3d (%5.1f%%)", name, team, pos, count, total, pct)
 
-        # 4. Top 10 Projected Players by Position & Realized Exposures
+        # 4. Simulation ROI & Equity Metrics
+        print()
         logger.info("-" * 70)
-        logger.info("TOP 10 PROJECTED PLAYERS BY POSITION & REALIZED EXPOSURE:")
-        for target_pos in ("QB", "RB", "WR", "TE"):
-            sub_players = [p for p in players if target_pos in p.positions and p.fppg > 0.0]
-            sub_players.sort(key=lambda p: p.fppg, reverse=True)
-            top10 = sub_players[:10]
-
-            logger.info("  --- TOP 10 %s BY PROJECTED FPPG ---", target_pos)
-            for rank, p in enumerate(top10, start=1):
-                cnt = player_counts.get(p.full_name, 0)
-                pct = (cnt / total) * 100
-                cap_flag = " [MAX CAP]" if cnt >= 37 else ""
-                logger.info("    %2d. %-22s (%s) - $%5d | Proj: %5.2f | Realized: %2d / %d (%4.1f%%)%s",
-                            rank, p.full_name, p.team, p.salary, p.fppg, cnt, total, pct, cap_flag)
-
-        # 5. Simulation ROI & Equity Metrics
-        logger.info("-" * 70)
-        logger.info("PORTFOLIO SIMULATION METRICS (5,000 MONTE CARLO TRIALS):")
+        logger.info("PORTFOLIO SIMULATION METRICS (%s MONTE CARLO TRIALS):", f"{config.num_sim_trials:,}")
         logger.info("  Candidate Pool Mean Sim ROI : %+.1f%%", np.mean(sim_roi))
         logger.info("  Top-Ranked Candidate Sim ROI: %+.1f%%", np.max(sim_roi))
-        logger.info("  Total 1st Place Win Trials  : %d of %d trials (%.2f%%)",
-                    np.sum(win_counts), config.num_sim_trials, (np.sum(win_counts) / config.num_sim_trials) * 100)
+        total_wins = int(np.sum(win_counts))
+        avg_wins = total_wins / config.num_sim_trials
+        logger.info("  1st-Place Finishes          : %s total (avg %.2f candidate wins / trial)",
+                    f"{total_wins:,}", avg_wins)
         logger.info("=" * 70)
 
 
@@ -928,6 +916,8 @@ def parse_arguments() -> SimOptimizerConfig:
     parser.add_argument("--num-field", type=int, default=10_000)
     parser.add_argument("--num-trials", type=int, default=5_000)
     parser.add_argument("--num-lineups", type=int, default=150)
+    parser.add_argument("--entry-fee", type=float, default=0.05,
+                        help="Contest entry fee in dollars (default: 0.05).")
     parser.add_argument("--stack-ratio", type=float, default=0.80)
     parser.add_argument("--max-qb-exposure", type=float, default=0.25)
     parser.add_argument("--max-rb-exposure", type=float, default=0.25)
@@ -958,6 +948,7 @@ def parse_arguments() -> SimOptimizerConfig:
         num_field_lineups=args.num_field,
         num_sim_trials=args.num_trials,
         num_selected_lineups=args.num_lineups,
+        entry_fee=args.entry_fee,
         stack_ratio=args.stack_ratio,
         max_qb_exposure=args.max_qb_exposure,
         max_rb_exposure=args.max_rb_exposure,
@@ -982,13 +973,11 @@ def setup_logging() -> None:
 # Main Pipeline Workflow
 # =============================================================================
 def main() -> None:
+    print("[INFO] Initializing FanDuel Football Optimizer...")
     setup_logging()
     config = parse_arguments()
 
-    print("=" * 70)
-    print(" FANDUEL NFL DFS MONTE CARLO SIMULATION & OPTIMIZATION PIPELINE ")
-    print(" Quantitative Game & Contest Simulation Engine (500 Cands / 10k Field / 5k Trials) ")
-    print("=" * 70)
+
 
     # 1. Ingest Data & Filter Backup QBs
     loader = FanDuelDataLoader(config)

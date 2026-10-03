@@ -101,8 +101,6 @@ def resolve_site(
     """
     # 1. Manual user override
     if explicit_site and explicit_site.lower() in ("fanduel", "draftkings"):
-        site = explicit_site.lower()
-        print(f"[CONFIG] Site explicitly set via flag: {site.upper()}")
         return site
 
     # 2. File Name Signatures from explicitly supplied paths
@@ -110,7 +108,6 @@ def resolve_site(
     for p in explicit_files:
         detected = detect_site_from_name(p.name)
         if detected:
-            print(f"[AUTO-DETECT] Identified {detected.upper()} from file name signature: '{p.name}'")
             return detected
 
     # 3. File Name Signatures from standard workspace directories
@@ -128,7 +125,6 @@ def resolve_site(
                     continue
                 detected = detect_site_from_name(p.name)
                 if detected:
-                    print(f"[AUTO-DETECT] Identified {detected.upper()} from file name signature: '{p.name}' ({scan_dir})")
                     return detected
 
     # 4. Content Inspection Fallback
@@ -142,9 +138,6 @@ def resolve_site(
     for p in all_files_to_inspect:
         detected = detect_site_from_content(p)
         if detected:
-            print(f"[AUTO-DETECT] Identified {detected.upper()} from CSV header tokens: '{p.name}'")
             return detected
 
-    # 5. Default
-    print("[AUTO-DETECT] No distinct signature detected. Defaulting to: FANDUEL")
     return "fanduel"
