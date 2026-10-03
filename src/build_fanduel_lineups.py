@@ -138,6 +138,7 @@ class SimOptimizerConfig:
     max_repeating_players: int = 6   # Guarantees >= 3 unique players between every pair of candidates
     randomness_deviation: float = 0.25  # ±25% uniform random projection jitter during MILP solving
     exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
+    strict_exposure_caps: bool = False # If True, fail if candidate pool cannot fulfill K lineups under hard caps
     random_seed: int = 42            # Seed for reproducible Monte Carlo trials
 
 
@@ -701,6 +702,12 @@ class PortfolioSelector:
 
         # Pass 2: Guaranteed fill to exactly K lineups minimizing exposure cap violations
         if len(selected) < K:
+            if self.config.strict_exposure_caps:
+                raise ValueError(
+                    f"Strict exposure caps enforced: could only select {len(selected)} / {K} lineups "
+                    f"strictly adhering to all position exposure caps. Increase candidate pool size "
+                    f"(--num-candidates) or relax exposure caps."
+                )
             needed = K - len(selected)
             logger.info("Pass 1 selected %d / %d lineups under hard caps. Selecting remaining %d minimizing cap violations...",
                         len(selected), K, needed)
@@ -937,6 +944,12 @@ def parse_arguments() -> SimOptimizerConfig:
     parser.add_argument("--max-exposure", type=float, default=0.25)
     parser.add_argument("--randomness", type=float, default=0.25)
     parser.add_argument("--keep-injured", action="store_true", default=False)
+    parser.add_argument(
+        "--strict-caps",
+        action="store_true",
+        default=False,
+        help="Strictly enforce exposure caps; fail if candidate pool cannot fulfill K lineups without cap overage",
+    )
 
     args = parser.parse_args()
 
@@ -968,6 +981,7 @@ def parse_arguments() -> SimOptimizerConfig:
         max_exposure=args.max_exposure,
         randomness_deviation=args.randomness,
         exclude_out_injured=not args.keep_injured,
+        strict_exposure_caps=args.strict_caps,
     )
 
 

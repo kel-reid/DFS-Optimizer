@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence, Set, Tuple
 
 logger = logging.getLogger("DFSSiteDetector")
 
@@ -91,7 +91,7 @@ def resolve_site(
     Resolves target DFS site:
       1. Evaluates file name signatures and CSV headers from explicitly supplied files.
       2. Scans data/templates, data/players, and data/ directories for signatures.
-      3. Falls back to CSV header token inspection on workspace directories.
+      3. Verifies no ambiguous multi-site files exist simultaneously.
       4. Defaults to 'fanduel' if completely unresolvable.
 
     Returns:
@@ -99,16 +99,20 @@ def resolve_site(
     """
     # 1. Signatures and content inspection from explicitly supplied paths
     explicit_files = [p for p in (template_path, players_path) if p is not None]
+    explicit_sites: Set[str] = set()
     for p in explicit_files:
-        detected = detect_site_from_name(p.name)
+        detected = detect_site_from_name(p.name) or detect_site_from_content(p)
         if detected:
-            return detected
-    for p in explicit_files:
-        detected = detect_site_from_content(p)
-        if detected:
-            return detected
+            explicit_sites.add(detected)
+    if len(explicit_sites) > 1:
+        raise ValueError(
+            f"Ambiguous explicit inputs: template and player files resolve to conflicting DFS sites: {explicit_sites}. "
+            "Please ensure both files correspond to the same DFS platform."
+        )
+    if explicit_sites:
+        return next(iter(explicit_sites))
 
-    # 2. File Name Signatures from standard workspace directories
+    # 2. File Name Signatures & Content Inspection from standard workspace directories
     # Check templates first (target contest), then players, then root data dir
     scan_dirs = (
         Path("data/templates"),
@@ -117,22 +121,20 @@ def resolve_site(
     )
     for scan_dir in scan_dirs:
         if scan_dir.exists():
+            detected_in_dir: Set[str] = set()
             for p in sorted(scan_dir.glob("*.csv")):
                 # Skip completed output files
                 if p.name.startswith("Completed-"):
                     continue
-                detected = detect_site_from_name(p.name)
+                detected = detect_site_from_name(p.name) or detect_site_from_content(p)
                 if detected:
-                    return detected
-
-    # 3. Content Inspection Fallback on workspace files
-    for scan_dir in scan_dirs:
-        if scan_dir.exists():
-            for p in sorted(scan_dir.glob("*.csv")):
-                if p.name.startswith("Completed-"):
-                    continue
-                detected = detect_site_from_content(p)
-                if detected:
-                    return detected
+                    detected_in_dir.add(detected)
+            if len(detected_in_dir) > 1:
+                raise ValueError(
+                    f"Ambiguous files detected in '{scan_dir}': found files for both {', '.join(sorted(detected_in_dir))}. "
+                    "Please keep only one DFS site's files in the directory or specify --template-csv explicitly."
+                )
+            if detected_in_dir:
+                return next(iter(detected_in_dir))
 
     return "fanduel"

@@ -159,7 +159,8 @@ python run_optimizer.py \
   [--max-exposure 0.25] \
   [--max-repeating 6] \
   [--randomness 0.25] \
-  [--keep-injured]
+  [--keep-injured] \
+  [--strict-caps]
 ```
 
 ---
