@@ -1,33 +1,26 @@
 # NFL DFS Optimization Engine for FanDuel & DraftKings
 
-A high-performance quantitative optimization and Monte Carlo simulation engine for generating Mass Multi-Entry (MME) portfolios for FanDuel and DraftKings NFL DFS contests.
+A high-performance quantitative optimization and Monte Carlo simulation engine for generating MME lineups for FanDuel and DraftKings NFL DFS contests.
 
 Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend), `numpy`, and `pandas`.
 
 ---
 
-## Intelligent Site Auto-Detection
+## Drop-and-Go Site Auto-Detection
 
-The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags:
+The engine automatically detects whether you are optimizing for **FanDuel** or **DraftKings** directly from your contest files—no platform flags or manual configuration required.
 
-### Signature Detection Rules
+Simply place your downloaded contest CSVs into the data folders:
 
-| Platform | Keyword Signatures | Prefix Match | Activated Rules |
-| :--- | :--- | :--- | :--- |
-| **DraftKings** | `DKSalaries`, `DKEntries`, `DraftKings`, `dk_`, `dk-`, `dk `, `dk.` | `dk*` (e.g. `dkcontest.csv`) | **$50,000 Cap**, Full PPR, `QB/2RB/3WR/TE/FLEX/DST` |
-| **FanDuel** | `FanDuel`, `players-list`, `entries-upload-template`, `fd_`, `fd-`, `fd `, `fd.` | `fd*` (e.g. `fdcontest.csv`) | **$60,000 Cap**, Half-PPR, `QB/2RB/3WR/TE/FLEX/DEF` |
+| Platform | Typical File Names | Auto-Configured Rules |
+| :--- | :--- | :--- |
+| **FanDuel** | Default exports like `FanDuel-NFL-...-players-list.csv` and `...-entries-upload-template.csv` (or any `fd*` filename) | **$60,000 Cap**, Half-PPR scoring, `QB/2RB/3WR/TE/FLEX/DEF` |
+| **DraftKings** | Default exports like `DKSalaries.csv` and `DKEntries.csv` (or any `dk*` filename) | **$50,000 Cap**, Full PPR scoring, `QB/2RB/3WR/TE/FLEX/DST` |
 
-### Resolution Hierarchy
+> [!TIP]
+> **Smart Header Fallback**: If you rename files generically (e.g., `players.csv`, `template.csv`), the engine automatically inspects the internal CSV column headers to identify the site and apply the correct contest rules.
 
-1. **Explicit Paths**: Inspects file names and CSV headers passed directly to `--template-csv` or `--players-csv`.
-2. **Template Directory**: Inspects `data/templates/` (the target contest entries template is prioritized).
-3. **Player Directory**: Inspects `data/players/` (player pricing and projection files).
-4. **Data Root**: Inspects files dropped directly into `data/`.
-5. **CSV Content Fallback**: If file names are generic (e.g. `salaries.csv`), inspects headers for site tokens:
-   * DraftKings: `DST`, `TeamAbbrev`, `AvgPointsPerGame`.
-   * FanDuel: `DEF`, `FPPG`, `Injury Indicator`, `Nickname`.
-
-You can simply run the optimizer and it will automatically detect the site:
+Run the optimizer with a single command:
 ```bash
 ./run_optimizer
 # Or:
