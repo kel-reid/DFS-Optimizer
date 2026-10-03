@@ -2,11 +2,22 @@
 Unit tests for contest constraints, salary caps, stacking, and exposure limits.
 """
 
-import numpy as np
+from __future__ import annotations
 
-from src.data.loader import FanDuelDataLoader
-from src.engine.selector import PortfolioSelector
-from src.engine.solver import CandidatePoolGenerator
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for direct script execution and language servers
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+
+from src.data.loader import FanDuelDataLoader  # noqa: E402
+from src.engine.selector import PortfolioSelector  # noqa: E402
+from src.engine.solver import CandidatePoolGenerator  # noqa: E402
 
 
 def test_loader_sanitization(mock_fanduel_files):
@@ -79,3 +90,7 @@ def test_portfolio_selector_exposure_caps(mock_fanduel_files):
     max_allowed = int(np.floor(5 * 0.40))
     for count in qb_counts.values():
         assert count <= max_allowed or count > 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-v"]))

@@ -5,11 +5,17 @@ Pytest configuration and synthetic fixtures for DFS Optimizer tests.
 from __future__ import annotations
 
 import csv
+import sys
 from pathlib import Path
 
-import pytest
+# Ensure project root is in sys.path for direct script execution and language servers
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import SimOptimizerConfig
+import pytest  # noqa: E402
+
+from src.config import SimOptimizerConfig  # noqa: E402
 
 
 @pytest.fixture

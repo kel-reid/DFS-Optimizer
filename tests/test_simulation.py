@@ -2,13 +2,24 @@
 Unit tests for simulation engine, opponent field sampler, and template export.
 """
 
-import numpy as np
+from __future__ import annotations
 
-from src.data.exporter import FanDuelTemplateExporter
-from src.data.loader import FanDuelDataLoader
-from src.engine.field import OpponentFieldSimulator
-from src.engine.simulator import CorrelatedGameEngine
-from src.engine.solver import CandidatePoolGenerator
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for direct script execution and language servers
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+
+from src.data.exporter import FanDuelTemplateExporter  # noqa: E402
+from src.data.loader import FanDuelDataLoader  # noqa: E402
+from src.engine.field import OpponentFieldSimulator  # noqa: E402
+from src.engine.simulator import CorrelatedGameEngine  # noqa: E402
+from src.engine.solver import CandidatePoolGenerator  # noqa: E402
 
 
 def test_opponent_field_simulation(mock_fanduel_files):
@@ -39,7 +50,7 @@ def test_correlated_game_engine(mock_fanduel_files):
 
     # Candidates & field
     cand_gen = CandidatePoolGenerator(optimizer, config)
-    candidates, c_mat = cand_gen.generate_candidate_pool()
+    _, c_mat = cand_gen.generate_candidate_pool()
 
     field_sim = OpponentFieldSimulator(players, config)
     f_mat = field_sim.simulate_field()
@@ -60,7 +71,7 @@ def test_correlated_game_engine(mock_fanduel_files):
 
 
 def test_template_exporter(mock_fanduel_files):
-    config, _, template_csv, output_csv = mock_fanduel_files
+    config, _, _, output_csv = mock_fanduel_files
     config.num_candidates = 5
     config.num_selected_lineups = 5
 
@@ -78,3 +89,7 @@ def test_template_exporter(mock_fanduel_files):
     # Verify line count (header + 5 lineups)
     lines = [line.strip() for line in out_path.read_text().splitlines() if line.strip()]
     assert len(lines) == 6
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-v"]))

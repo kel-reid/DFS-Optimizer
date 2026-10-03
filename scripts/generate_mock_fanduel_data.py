@@ -6,6 +6,7 @@ Used for testing and demonstration of the MME lineup optimization pipeline.
 import csv
 import random
 
+
 def generate_mock_data():
     teams_matchups = [
         ("KC", "BUF"),
@@ -80,7 +81,7 @@ def generate_mock_data():
                 else:
                     sal = random.randint(4600, 5100)
                     fppg = round(random.uniform(4.5, 8.5), 2)
-                
+
                 players.append({
                     "Id": fd_id, "Position": "RB", "First Name": r_first, "Nickname": f"{r_first} {r_last}",
                     "Last Name": r_last, "FPPG": str(fppg), "Team": team, "Opponent": opp,

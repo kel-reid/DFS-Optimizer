@@ -23,7 +23,7 @@ MOCK_DK_PLAYERS = [
     ("QB", "Joe Burrow (1008)", "Joe Burrow", "1008", "QB", "7000", "BAL@CIN 10/04/2026 01:00PM ET", "CIN", "21.8"),
     ("QB", "Kirk Cousins (1009)", "Kirk Cousins", "1009", "QB", "6000", "LV@LAC 10/04/2026 04:05PM ET", "LV", "18.5"),
     ("QB", "Geno Smith (1010)", "Geno Smith", "1010", "QB", "5800", "NYJ@MIA 10/04/2026 01:00PM ET", "NYJ", "17.9"),
-    
+
     # RBs
     ("RB", "Christian McCaffrey (2001)", "Christian McCaffrey", "2001", "RB/FLEX", "9000", "SF@LAR 10/04/2026 04:05PM ET", "SF", "24.5"),
     ("RB", "Derrick Henry (2002)", "Derrick Henry", "2002", "RB/FLEX", "8200", "BAL@CIN 10/04/2026 01:00PM ET", "BAL", "21.3"),

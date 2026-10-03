@@ -2,11 +2,20 @@
 Unit tests for src/data/projections.py.
 """
 
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 
-from pydfs_lineup_optimizer import Site, Sport, get_optimizer
+# Ensure project root is in sys.path for direct script execution and language servers
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.projections import (
+import pytest  # noqa: E402
+from pydfs_lineup_optimizer import Site, Sport, get_optimizer  # noqa: E402
+
+from src.data.projections import (  # noqa: E402
     apply_forward_projections,
     find_projections_csv,
     normalize_name,
@@ -51,3 +60,7 @@ def test_apply_forward_projections(mock_fanduel_files, mock_projections_csv):
     assert player_dict.get("KC Chiefs") == 9.5
     # Unprojected players should be zeroed
     assert player_dict.get("PHI QB1") == 0.0
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-v"]))
