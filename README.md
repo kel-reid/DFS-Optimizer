@@ -6,50 +6,6 @@ Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solve
 
 ---
 
-## Architecture & Module Organization
-
-The codebase is organized into single-responsibility packages designed for production extensibility:
-
-```
-dfs-optimizer/
-├── run_optimizer.py             # Root CLI entry point with auto-detection & launcher
-├── run_optimizer                # Executable bash launcher wrapper
-├── Dockerfile                   # Production container with CBC solver & unprivileged user
-├── docker-compose.yml           # Docker Compose runner with mounted data volumes
-├── pyproject.toml               # Build metadata, ruff linter, and pytest configuration
-├── requirements.txt             # Core production dependencies
-├── requirements-dev.txt         # Development & CI dependencies (pytest, ruff)
-├── config/
-│   └── settings.yaml            # Contest hyperparameters, exposure caps, and solver settings
-├── src/
-│   ├── config.py                # Strongly-typed dataclass configuration schemas
-│   ├── site_detector.py         # Signature & CSV content inspection auto-detection engine
-│   ├── build_fanduel_lineups.py # FanDuel pipeline facade
-│   ├── build_draftkings_lineups.py # DraftKings pipeline facade
-│   ├── data/
-│   │   ├── loader.py            # Player pool ingestion, inactive pruning & backup QB filtering
-│   │   ├── projections.py       # Forward-looking projection matching & FPPG overwriting
-│   │   └── exporter.py          # Contest template slicing & formatted upload CSV generation
-│   └── engine/
-│       ├── solver.py            # CBC integer linear programming candidate generator (MILP)
-│       ├── field.py             # Power-law tournament field opponent simulator (M = 10,000)
-│       ├── simulator.py         # Correlated game outcome engine with team shocks & BLAS scoring
-│       └── selector.py          # Portfolio selection maximizing ROI subject to exposure caps
-├── tests/                       # Pytest test suite with synthetic fixtures
-│   ├── conftest.py              # Self-contained mock player pool & template fixtures
-│   ├── test_detector.py         # Unit tests for site auto-detection
-│   ├── test_projections.py      # Unit tests for name normalization & projection mapping
-│   ├── test_constraints.py      # Unit tests for salary caps, stacking, and exposure limits
-│   └── test_simulation.py       # Unit tests for field generation, covariance, and export
-└── data/
-    ├── players/                 # Official contest player pricing CSVs
-    ├── templates/               # Contest entry upload template CSVs
-    ├── projections/             # Weekly forward-looking projection CSVs
-    └── output/                  # Completed, ready-to-upload CSV files
-```
-
----
-
 ## Intelligent Site Auto-Detection
 
 The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags:
