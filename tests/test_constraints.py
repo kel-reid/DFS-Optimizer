@@ -45,7 +45,7 @@ def test_candidate_generation_constraints(mock_fanduel_files):
 
     # Verify constraints across generated lineups
     for lineup in candidates:
-        players = lineup.lineup
+        players = list(lineup.lineup)
         assert len(players) == 9
 
         # Salary cap compliance
