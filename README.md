@@ -6,28 +6,23 @@ Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solve
 
 ---
 
-## Drop-and-Go Site Auto-Detection
+## Intelligent Site Auto-Detection
 
-The engine automatically detects whether you are optimizing for **FanDuel** or **DraftKings** directly from your contest files—no platform flags or manual configuration required.
+The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags:
 
-Simply place your downloaded contest CSVs into the data folders:
+### Signature Detection Rules
 
-| Platform | Typical File Names | Auto-Configured Rules |
-| :--- | :--- | :--- |
-| **FanDuel** | Default exports like `FanDuel-NFL-...-players-list.csv` and `...-entries-upload-template.csv` (or any `fd*` filename) | **$60,000 Cap**, Half-PPR scoring, `QB/2RB/3WR/TE/FLEX/DEF` |
-| **DraftKings** | Default exports like `DKSalaries.csv` and `DKEntries.csv` (or any `dk*` filename) | **$50,000 Cap**, Full PPR scoring, `QB/2RB/3WR/TE/FLEX/DST` |
+| Platform | Keyword Signatures | Prefix Match | Activated Rules |
+| :--- | :--- | :--- | :--- |
+| **DraftKings** | `DKSalaries`, `DKEntries`, `DraftKings`, `dk_`, `dk-`, `dk `, `dk.` | `dk*` (e.g. `dkcontest.csv`) | **$50,000 Cap**, Full PPR, `QB/2RB/3WR/TE/FLEX/DST` |
+| **FanDuel** | `FanDuel`, `players-list`, `entries-upload-template`, `fd_`, `fd-`, `fd `, `fd.` | `fd*` (e.g. `fdcontest.csv`) | **$60,000 Cap**, Half-PPR, `QB/2RB/3WR/TE/FLEX/DEF` |
 
-> [!TIP]
-> **Smart Header Fallback**: If you rename files generically (e.g., `players.csv`, `template.csv`), the engine automatically inspects the internal CSV column headers to identify the site and apply the correct contest rules.
-
-Run the optimizer with a single command:
+You can simply run the optimizer and it will automatically detect the site:
 ```bash
 ./run_optimizer
 # Or:
 python run_optimizer.py
 ```
-
----
 
 ## Strategic & Quantitative Constraints
 
@@ -68,8 +63,6 @@ python run_optimizer.py
      * **Top 20.0%** (Min-cash line): **1.5x** entry fee
    * CLI `--entry-fee` parameter (default: 0.05) makes Sim ROI calculation adaptable to any buy-in level.
 
----
-
 ## Simulation Dimensions: N = 500, T = 5,000, K = 150
 
 The Monte Carlo simulation pipeline parameterizes scale across three distinct mathematical dimensions:
@@ -80,8 +73,6 @@ The Monte Carlo simulation pipeline parameterizes scale across three distinct ma
   * Independent simulated realizations of the full game slate with right-skewed Gamma distributions and log-normal team offensive shocks $\exp(\sigma_{\text{team}} Z_{\text{team}} - 0.5\sigma_{\text{team}}^2)$.
 * **K = 150 Portfolio Lineups (`--num-lineups`)**:
   * The target entry portfolio size exported to the contest template (standard FanDuel/DraftKings 150-max MME contests).
-
----
 
 ## Setup & Local Execution
 
@@ -96,11 +87,8 @@ cd DFS-Optimizer
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install production dependencies
+# Install dependencies
 pip install -r requirements.txt
-
-# Or install with development & testing dependencies
-pip install -r requirements-dev.txt
 ```
 
 ### 2. Running the Optimizer
@@ -118,8 +106,6 @@ python run_optimizer.py --entry-fee 0.05 --num-candidates 500 --num-trials 5000
 ```
 
 The completed upload CSV will be written to `data/output/Completed-[template-name].csv`.
-
----
 
 ## Running Automated Tests
 
