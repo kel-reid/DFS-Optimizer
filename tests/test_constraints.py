@@ -5,6 +5,7 @@ Unit tests for contest constraints, salary caps, stacking, and exposure limits.
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from pathlib import Path
 
 # Ensure project root is in sys.path for direct script execution and language servers
@@ -61,6 +62,13 @@ def test_candidate_generation_constraints(mock_fanduel_files):
                 opp_team = d.game_info.away_team if d.team == d.game_info.home_team else d.game_info.home_team
                 assert opp_team not in off_teams, f"Opposing DEF violation detected: {d.team} vs {opp_team}"
 
+        # Team diversity: at least 3 distinct teams and max 4 players from one team
+        teams = [p.team for p in players]
+        distinct_teams = set(teams)
+        assert len(distinct_teams) >= 3, f"Lineup has only {len(distinct_teams)} distinct teams (< 3): {teams}"
+        team_counts = Counter(teams)
+        assert max(team_counts.values()) <= 4, f"Lineup exceeds 4 players from a single team: {team_counts}"
+
 
 def test_portfolio_selector_exposure_caps(mock_fanduel_files):
     config, _, _, _ = mock_fanduel_files
@@ -95,6 +103,39 @@ def test_portfolio_selector_exposure_caps(mock_fanduel_files):
     max_allowed = int(np.floor(5 * 0.40))
     for count in qb_counts.values():
         assert count <= max_allowed
+
+
+def test_draftkings_team_diversity_constraints():
+    from pydfs_lineup_optimizer import Player, Site, Sport, get_optimizer
+    from pydfs_lineup_optimizer.player import GameInfo
+
+    from src.build_draftkings_lineups import DKOptimizerConfig, DraftKingsLineupPipeline
+
+    opt = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
+    game1 = GameInfo("KC", "BUF", None)
+    game2 = GameInfo("PHI", "DAL", None)
+    teams = [("KC", game1), ("BUF", game1), ("PHI", game2), ("DAL", game2)]
+    players = []
+    pid = 1
+    for team, g_info in teams:
+        for pos in ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "DST"]:
+            players.append(Player(str(pid), f"{team}_{pos}", f"Last_{pid}", [pos], team, 5000, 15.0, game_info=g_info))
+            pid += 1
+
+    opt.player_pool.load_players(players)
+    config = DKOptimizerConfig()
+    pipeline = DraftKingsLineupPipeline(config, opt)
+    pipeline.configure_optimizer_instance(opt)
+
+    lineups = list(opt.optimize(n=3))
+    assert len(lineups) == 3
+    for lineup in lineups:
+        roster = list(lineup.lineup)
+        roster_teams = [p.team for p in roster]
+        distinct = set(roster_teams)
+        assert len(distinct) >= 3, f"DK lineup has {len(distinct)} teams (< 3): {roster_teams}"
+        team_counts = Counter(roster_teams)
+        assert max(team_counts.values()) <= 4, f"DK lineup exceeds 4 players from one team: {team_counts}"
 
 
 if __name__ == "__main__":
