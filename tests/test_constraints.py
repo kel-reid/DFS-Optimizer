@@ -64,9 +64,14 @@ def test_candidate_generation_constraints(mock_fanduel_files):
 
 def test_portfolio_selector_exposure_caps(mock_fanduel_files):
     config, _, _, _ = mock_fanduel_files
-    config.num_candidates = 25
+    config.num_candidates = 30
     config.num_selected_lineups = 5
     config.max_qb_exposure = 0.40  # max 2 lineups
+    config.max_rb_exposure = 0.60
+    config.max_wr_exposure = 0.60
+    config.max_te_exposure = 0.60
+    config.max_def_exposure = 0.60
+    config.max_exposure = 0.60
 
     loader = FanDuelDataLoader(config)
     optimizer = loader.load_and_sanitize()
