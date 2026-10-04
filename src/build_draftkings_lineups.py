@@ -60,6 +60,8 @@ from pydfs_lineup_optimizer import (
 )
 from pydfs_lineup_optimizer.player import LineupPlayer
 
+from src.config import load_yaml_settings
+
 # -----------------------------------------------------------------------------
 # Logging Configuration
 # -----------------------------------------------------------------------------
@@ -74,7 +76,6 @@ logger = logging.getLogger("DraftKingsMMEOptimizer")
 # -----------------------------------------------------------------------------
 # Configuration Dataclass
 # -----------------------------------------------------------------------------
-from src.config import load_yaml_settings
 
 
 @dataclass
