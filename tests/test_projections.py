@@ -51,7 +51,7 @@ def test_find_projections_csv(tmp_path: Path, monkeypatch):
 
 
 def test_apply_forward_projections(mock_fanduel_files, mock_projections_csv):
-    config, players_csv, _, _ = mock_fanduel_files
+    _, players_csv, _, _ = mock_fanduel_files
     optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
     optimizer.load_players_from_csv(str(players_csv))
 

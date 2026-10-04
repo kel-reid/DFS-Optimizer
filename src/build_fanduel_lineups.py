@@ -128,6 +128,8 @@ def parse_arguments() -> SimOptimizerConfig:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"Completed-{template_path.name}"
 
+    exclude_injured = False if args.keep_injured else default_cfg.exclude_out_injured
+
     return SimOptimizerConfig.from_settings(
         players_csv=players_path,
         template_csv=template_path,
@@ -147,7 +149,7 @@ def parse_arguments() -> SimOptimizerConfig:
         max_exposure=args.max_exposure,
         max_repeating_players=args.max_repeating,
         randomness_deviation=args.randomness,
-        exclude_out_injured=not args.keep_injured,
+        exclude_out_injured=exclude_injured,
         strict_exposure_caps=args.strict_caps,
     )
 

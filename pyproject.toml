@@ -40,7 +40,7 @@ python_functions = ["test_*"]
 pythonpath = ["."]
 
 [tool.pyright]
-include = ["src", "tests", "scripts", "run_optimizer.py"]
+include = ["src", "tests", "scripts", "run_optimizer.py", "run.py", "build_fanduel_lineups.py"]
 venvPath = "."
 venv = ".venv"
 executionEnvironments = [

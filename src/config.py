@@ -184,6 +184,9 @@ class DraftKingsConfig:
         for k in ["max_qb_exposure", "max_rb_exposure", "max_wr_exposure", "max_te_exposure", "max_dst_exposure", "max_exposure"]:
             if k in exp_cfg:
                 params[k] = float(exp_cfg[k])
+        # Map max_def_exposure from YAML settings to max_dst_exposure if not explicitly set
+        if "max_def_exposure" in exp_cfg and "max_dst_exposure" not in params:
+            params["max_dst_exposure"] = float(exp_cfg["max_def_exposure"])
 
         for k in ["stack_ratio", "randomness_deviation"]:
             if k in solver_cfg:
@@ -200,6 +203,8 @@ class DraftKingsConfig:
             "DFS_DK_STACK_RATIO": ("stack_ratio", float),
             "DFS_DK_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_DK_RANDOMNESS": ("randomness_deviation", float),
+            "DFS_DK_MAX_DST_EXPOSURE": ("max_dst_exposure", float),
+            "DFS_DK_MAX_DEF_EXPOSURE": ("max_dst_exposure", float),
         }
         for env_var, (attr, cast) in env_map.items():
             val = os.environ.get(env_var)

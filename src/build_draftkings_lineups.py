@@ -607,6 +607,8 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"Completed-{template_path.name}"
 
+    exclude_injured = False if args.keep_injured else default_cfg.exclude_out_injured
+
     return DKOptimizerConfig.from_settings(
         players_csv=players_path,
         template_csv=template_path,
@@ -621,7 +623,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         max_te_exposure=args.max_te_exposure,
         max_def_exposure=args.max_def_exposure,
         max_repeating_players=args.max_repeating,
-        exclude_out_injured=not args.keep_injured,
+        exclude_out_injured=exclude_injured,
     )
 
 

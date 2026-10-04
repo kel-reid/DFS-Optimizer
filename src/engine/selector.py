@@ -183,6 +183,29 @@ class SimAuditReporter:
                     if opp_team in off_teams:
                         def_opp_violations += 1
 
+        # Evaluate exposure cap compliance across all rostered players
+        def get_pos_cap(p: Player) -> int:
+            pos = set(p.positions)
+            if "D" in pos:
+                return math.floor(total * config.max_def_exposure)
+            elif "QB" in pos:
+                return math.floor(total * config.max_qb_exposure)
+            elif "RB" in pos:
+                return math.floor(total * config.max_rb_exposure)
+            elif "WR" in pos:
+                return math.floor(total * config.max_wr_exposure)
+            elif "TE" in pos:
+                return math.floor(total * config.max_te_exposure)
+            return math.floor(total * config.max_exposure)
+
+        cap_violations = []
+        for name, count in player_counts.items():
+            p_obj = player_info.get(name)
+            if p_obj:
+                cap = get_pos_cap(p_obj)
+                if count > cap:
+                    cap_violations.append((name, count, cap))
+
         logger.info("✓ CONSTRAINTS AUDIT:")
         logger.info(
             "  - %d / %d (%.1f%%) of lineups comply with $%d salary cap.",
@@ -209,6 +232,15 @@ class SimAuditReporter:
             total,
             (def_opp_violations / total) * 100,
         )
+        if cap_violations:
+            logger.warning(
+                "  - Exposure Cap Overages: %d player(s) exceeded configured caps (via Pass 2 emergency fill):",
+                len(cap_violations),
+            )
+            for name, count, cap in cap_violations:
+                logger.warning("    * %s: %d lineups (cap: %d)", name, count, cap)
+        else:
+            logger.info("  - Exposure Cap Overages: 0 players exceeded position ceilings (100.0%% compliant).")
 
         # 2. QB Distribution Table
         qb_counts = Counter(p.full_name for l in lineups for p in l.lineup if "QB" in p.positions)
