@@ -31,13 +31,23 @@ def test_normalize_name():
     assert normalize_name("A.J. Brown") == "aj brown"
 
 
-def test_find_projections_csv(tmp_path: Path):
+def test_find_projections_csv(tmp_path: Path, monkeypatch):
     explicit = tmp_path / "custom_proj.csv"
     explicit.write_text("player,fantasy\n")
     assert find_projections_csv(explicit) == explicit
 
-    # Test non-existent fallback
-    assert find_projections_csv(Path("non_existent_file.csv")) is None or True
+    # Test non-existent fallback in isolated directory
+    monkeypatch.chdir(tmp_path)
+    assert find_projections_csv(Path("non_existent_file.csv")) is None
+    assert find_projections_csv(None) is None
+
+    # Test discovery from data/projections/ directory
+    proj_dir = tmp_path / "data" / "projections"
+    proj_dir.mkdir(parents=True)
+    fallback_file = proj_dir / "test_projections.csv"
+    fallback_file.write_text("player,fppg\n")
+    res = find_projections_csv()
+    assert res is not None and res.resolve() == fallback_file.resolve()
 
 
 def test_apply_forward_projections(mock_fanduel_files, mock_projections_csv):

@@ -104,16 +104,17 @@ class CandidatePoolGenerator:
             for p in opt_unconstrained.player_pool.all_players:
                 p.max_exposure = 0.35
 
-            phase1_sets = [set(p.id for p in c.lineup) for c in candidates]
+            accepted_sets = [set(p.id for p in c.lineup) for c in candidates]
             max_rep = self.config.max_repeating_players
 
             t1 = time.time()
             solved_unconstrained = 0
             for lineup in opt_unconstrained.optimize(n=n_unconstrained * 2):
                 l_set = set(p.id for p in lineup.lineup)
-                if any(len(l_set & p1_set) > max_rep for p1_set in phase1_sets):
+                if any(len(l_set & prev_set) > max_rep for prev_set in accepted_sets):
                     continue
                 candidates.append(lineup)
+                accepted_sets.append(l_set)
                 solved_unconstrained += 1
                 if solved_unconstrained % 50 == 0 or solved_unconstrained == n_unconstrained:
                     logger.info(

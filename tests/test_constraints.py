@@ -64,7 +64,7 @@ def test_candidate_generation_constraints(mock_fanduel_files):
 
 def test_portfolio_selector_exposure_caps(mock_fanduel_files):
     config, _, _, _ = mock_fanduel_files
-    config.num_candidates = 10
+    config.num_candidates = 25
     config.num_selected_lineups = 5
     config.max_qb_exposure = 0.40  # max 2 lineups
 
@@ -89,7 +89,7 @@ def test_portfolio_selector_exposure_caps(mock_fanduel_files):
 
     max_allowed = int(np.floor(5 * 0.40))
     for count in qb_counts.values():
-        assert count <= max_allowed or count > 0
+        assert count <= max_allowed
 
 
 if __name__ == "__main__":

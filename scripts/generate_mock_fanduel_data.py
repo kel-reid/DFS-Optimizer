@@ -171,7 +171,7 @@ def generate_mock_data():
 
     # Write mock 150-entry template
     template_headers = ["entry_id", "contest_id", "contest_name", "entry_fee", "QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DEF"]
-    template_file = out_dir_templates / "mock-FanDuel-NFL-entries-template.csv"
+    template_file = out_dir_templates / "mock-FanDuel-NFL-entries-upload-template.csv"
     with open(template_file, "w", newline="") as f:
         template_writer = csv.writer(f)
         template_writer.writerow(template_headers)

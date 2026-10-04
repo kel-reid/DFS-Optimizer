@@ -37,6 +37,10 @@ jobs:
         run: |
           ruff check .
 
+      - name: Run Type Checking (mypy)
+        run: |
+          mypy src tests
+
       - name: Run Pytest Test Suite
         run: |
           pytest tests/ -v

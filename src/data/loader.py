@@ -61,7 +61,9 @@ def find_template_csv(explicit_path: Optional[Path] = None) -> Path:
         if c.exists():
             return c
 
-    matches = sorted(Path("data").glob("**/*entries-upload-template.csv"))
+    matches = sorted(Path("data").glob("**/*entries*template*.csv"))
+    if not matches:
+        matches = sorted(Path("data").glob("**/*template*.csv"))
     if matches:
         return matches[0]
 

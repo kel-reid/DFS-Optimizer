@@ -74,6 +74,9 @@ logger = logging.getLogger("DraftKingsMMEOptimizer")
 # -----------------------------------------------------------------------------
 # Configuration Dataclass
 # -----------------------------------------------------------------------------
+from src.config import load_yaml_settings
+
+
 @dataclass
 class DKOptimizerConfig:
     """Runtime configuration and hyperparameters for DraftKings MME pipeline."""
@@ -94,6 +97,48 @@ class DKOptimizerConfig:
     stack_ratio: float = 0.80        # 80% primary stacked (120 lineups) / 20% unconstrained (30 lineups)
     id_format: str = "name_id"       # "name_id" ("Josh Allen (123456)") or "id_only" ("123456")
     exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
+
+    @classmethod
+    def from_settings(cls, settings_path: Optional[Path] = None, **overrides: Any) -> DKOptimizerConfig:
+        """Constructs DKOptimizerConfig merging config/settings.yaml, environment variables, and kwargs."""
+        cfg_dict = load_yaml_settings(settings_path)
+        dk_cfg = cfg_dict.get("draftkings", {})
+        sim_cfg = dk_cfg.get("simulation", {})
+        exp_cfg = dk_cfg.get("exposure_caps", {})
+        solver_cfg = dk_cfg.get("solver", {})
+
+        params: Dict[str, Any] = {}
+        if "salary_cap" in dk_cfg:
+            params["salary_cap"] = int(dk_cfg["salary_cap"])
+        if "num_lineups" in sim_cfg:
+            params["num_lineups"] = int(sim_cfg["num_lineups"])
+        for k in ["max_qb_exposure", "max_rb_exposure", "max_wr_exposure", "max_te_exposure", "max_def_exposure", "max_exposure"]:
+            if k in exp_cfg:
+                params[k] = float(exp_cfg[k])
+        for k in ["stack_ratio", "randomness_deviation"]:
+            if k in solver_cfg:
+                params[k] = float(solver_cfg[k])
+        for k in ["max_repeating_players"]:
+            if k in solver_cfg:
+                params[k] = int(solver_cfg[k])
+        if "exclude_out_injured" in solver_cfg:
+            params["exclude_out_injured"] = bool(solver_cfg["exclude_out_injured"])
+
+        env_map = {
+            "DFS_DK_SALARY_CAP": ("salary_cap", int),
+            "DFS_DK_NUM_LINEUPS": ("num_lineups", int),
+            "DFS_DK_STACK_RATIO": ("stack_ratio", float),
+            "DFS_DK_MAX_REPEATING": ("max_repeating_players", int),
+            "DFS_DK_RANDOMNESS": ("randomness_deviation", float),
+        }
+        import os
+        for env_var, (attr, cast) in env_map.items():
+            val = os.environ.get(env_var)
+            if val is not None:
+                params[attr] = cast(val)
+
+        params.update({k: v for k, v in overrides.items() if v is not None})
+        return cls(**params)
 
 
 # -----------------------------------------------------------------------------
@@ -529,6 +574,8 @@ class DraftKingsTemplateExporter:
 # CLI Arguments Parser & Entry Point
 # -----------------------------------------------------------------------------
 def parse_dk_arguments() -> DKOptimizerConfig:
+    default_cfg = DKOptimizerConfig.from_settings()
+
     parser = argparse.ArgumentParser(
         description="DraftKings NFL Classic Quantitative MME Lineup Optimizer",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -536,16 +583,16 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     parser.add_argument("--players-csv", type=Path, default=None)
     parser.add_argument("--template-csv", type=Path, default=None)
     parser.add_argument("--output-csv", type=Path, default=None)
-    parser.add_argument("--num-lineups", type=int, default=150)
-    parser.add_argument("--stack-ratio", type=float, default=0.80)
-    parser.add_argument("--max-qb-exposure", type=float, default=0.25)
-    parser.add_argument("--max-rb-exposure", type=float, default=0.25)
-    parser.add_argument("--max-wr-exposure", type=float, default=0.25)
-    parser.add_argument("--max-te-exposure", type=float, default=0.25)
-    parser.add_argument("--max-def-exposure", type=float, default=0.20)
-    parser.add_argument("--max-exposure", type=float, default=0.25)
-    parser.add_argument("--randomness", type=float, default=0.25)
-    parser.add_argument("--max-repeating", type=int, default=6)
+    parser.add_argument("--num-lineups", type=int, default=default_cfg.num_lineups)
+    parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
+    parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)
+    parser.add_argument("--max-rb-exposure", type=float, default=default_cfg.max_rb_exposure)
+    parser.add_argument("--max-wr-exposure", type=float, default=default_cfg.max_wr_exposure)
+    parser.add_argument("--max-te-exposure", type=float, default=default_cfg.max_te_exposure)
+    parser.add_argument("--max-def-exposure", type=float, default=default_cfg.max_def_exposure)
+    parser.add_argument("--max-exposure", type=float, default=default_cfg.max_exposure)
+    parser.add_argument("--randomness", type=float, default=default_cfg.randomness_deviation)
+    parser.add_argument("--max-repeating", type=int, default=default_cfg.max_repeating_players)
     parser.add_argument("--keep-injured", action="store_true", help="Keep injured/questionable/out players in player pool")
 
     args, _ = parser.parse_known_args()
@@ -560,7 +607,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"Completed-{template_path.name}"
 
-    return DKOptimizerConfig(
+    return DKOptimizerConfig.from_settings(
         players_csv=players_path,
         template_csv=template_path,
         output_csv=output_path,

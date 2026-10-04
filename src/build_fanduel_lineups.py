@@ -66,7 +66,9 @@ __all__ = [
 
 
 def parse_arguments() -> SimOptimizerConfig:
-    """Parses CLI arguments into a strongly-typed SimOptimizerConfig instance."""
+    """Parses CLI arguments into a strongly-typed SimOptimizerConfig instance, merging config/settings.yaml."""
+    default_cfg = SimOptimizerConfig.from_settings()
+
     parser = argparse.ArgumentParser(
         description="FanDuel NFL Classic Quantitative Monte Carlo Simulation & Optimization Engine",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -81,35 +83,35 @@ def parse_arguments() -> SimOptimizerConfig:
         help="Path to external projections CSV (e.g. data/projections/fanduel_research_projections.csv).",
     )
     parser.add_argument("--output-csv", type=Path, default=None)
-    parser.add_argument("--num-candidates", type=int, default=500)
-    parser.add_argument("--num-field", type=int, default=10_000)
-    parser.add_argument("--num-trials", type=int, default=5_000)
-    parser.add_argument("--num-lineups", type=int, default=150)
+    parser.add_argument("--num-candidates", type=int, default=default_cfg.num_candidates)
+    parser.add_argument("--num-field", type=int, default=default_cfg.num_field_lineups)
+    parser.add_argument("--num-trials", type=int, default=default_cfg.num_sim_trials)
+    parser.add_argument("--num-lineups", type=int, default=default_cfg.num_selected_lineups)
     parser.add_argument(
         "--entry-fee",
         type=float,
-        default=0.05,
-        help="Contest entry fee in dollars (default: 0.05).",
+        default=default_cfg.entry_fee,
+        help="Contest entry fee in dollars.",
     )
-    parser.add_argument("--stack-ratio", type=float, default=0.80)
-    parser.add_argument("--max-qb-exposure", type=float, default=0.25)
-    parser.add_argument("--max-rb-exposure", type=float, default=0.25)
-    parser.add_argument("--max-wr-exposure", type=float, default=0.25)
-    parser.add_argument("--max-te-exposure", type=float, default=0.25)
-    parser.add_argument("--max-def-exposure", type=float, default=0.20)
-    parser.add_argument("--max-exposure", type=float, default=0.25)
+    parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
+    parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)
+    parser.add_argument("--max-rb-exposure", type=float, default=default_cfg.max_rb_exposure)
+    parser.add_argument("--max-wr-exposure", type=float, default=default_cfg.max_wr_exposure)
+    parser.add_argument("--max-te-exposure", type=float, default=default_cfg.max_te_exposure)
+    parser.add_argument("--max-def-exposure", type=float, default=default_cfg.max_def_exposure)
+    parser.add_argument("--max-exposure", type=float, default=default_cfg.max_exposure)
     parser.add_argument(
         "--max-repeating",
         type=int,
-        default=6,
+        default=default_cfg.max_repeating_players,
         help="Enforces >= 3 unique players between every pair of lineups",
     )
-    parser.add_argument("--randomness", type=float, default=0.25)
+    parser.add_argument("--randomness", type=float, default=default_cfg.randomness_deviation)
     parser.add_argument("--keep-injured", action="store_true", default=False)
     parser.add_argument(
         "--strict-caps",
         action="store_true",
-        default=False,
+        default=default_cfg.strict_exposure_caps,
         help="Strictly enforce exposure caps; fail if candidate pool cannot fulfill K lineups without cap overage",
     )
 
@@ -126,7 +128,7 @@ def parse_arguments() -> SimOptimizerConfig:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"Completed-{template_path.name}"
 
-    return SimOptimizerConfig(
+    return SimOptimizerConfig.from_settings(
         players_csv=players_path,
         template_csv=template_path,
         output_csv=output_path,

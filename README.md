@@ -1,6 +1,6 @@
-# NFL DFS Optimization Engine for FanDuel & DraftKings
+# NFL DFS Optimization Engine
 
-A high-performance quantitative optimization and Monte Carlo simulation engine for generating MME lineups for FanDuel and DraftKings NFL DFS contests.
+A quantitative optimization and Monte Carlo simulation engine for generating MME lineups for FanDuel and DraftKings NFL DFS contests.
 
 Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend), `numpy`, and `pandas`.
 
