@@ -1,0 +1,21 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        ".",
+        "src",
+        ".venv/lib/python3.14/site-packages"
+      ]
+    }
+  ],
+  "extraPaths": [
+    ".",
+    "src",
+    ".venv/lib/python3.14/site-packages"
+  ],
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": false
+}

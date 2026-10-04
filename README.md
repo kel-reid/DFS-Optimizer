@@ -1,85 +1,14 @@
-# NFL DFS Optimization Tool for FanDuel & DraftKings
+# NFL DFS Optimization Engine
 
-A quantitative optimization pipeline for generating MME tournament lineups for FanDuel and DraftKings NFL DFS contests.
+A quantitative optimization and Monte Carlo simulation engine for generating MME lineups for FanDuel and DraftKings NFL DFS contests.
 
-Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend) and `pandas`.
+Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend), `numpy`, and `pandas`.
 
----
-
-## Project Directory Structure
-
-```
-dfs-optimizer/
-|-- data/
-|   |-- players/       # Official player pools (FanDuel or DraftKings)
-|   |   |-- FanDuel-NFL-2026 EDT-10 EDT-04 EDT-134747-players-list.csv
-|   |   \-- DKSalaries.csv (DraftKings)
-|   |-- templates/     # Reserved contest entry templates
-|   |   |-- FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv
-|   |   \-- DKEntries.csv (DraftKings)
-|   \-- output/        # Upload-ready completed CSVs
-|       \-- Completed-<template-name>.csv
-|-- src/
-|   |-- __init__.py
-|   |-- site_detector.py           # File name signature auto-detection engine
-|   |-- build_fanduel_lineups.py   # FanDuel solver ($60k cap, DEF, Half-PPR)
-|   \-- build_draftkings_lineups.py# DraftKings solver ($50k cap, DST, Full PPR)
-|-- scripts/
-|   |-- generate_mock_fanduel_data.py    # Mock FanDuel test generator
-|   \-- generate_mock_draftkings_data.py # Mock DraftKings test generator
-|-- run_optimizer.py   # Primary pipeline launcher (auto-detects site)
-|-- run_optimizer      # Executable terminal launcher (./run_optimizer)
-|-- run.py             # Launcher alias (forwards to run_optimizer.py)
-|-- build_fanduel_lineups.py   # Auto-detecting wrapper entry point
-|-- requirements.txt   # Python package dependencies
-\-- README.md          # Documentation & workflow guide
-```
-
----
 
 ## Intelligent Site Auto-Detection
 
-The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags:
+The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags.
 
-### Signature Detection Rules
-
-| Platform | Keyword Signatures | Prefix Match | Activated Rules |
-| :--- | :--- | :--- | :--- |
-| **DraftKings** | `DKSalaries`, `DKEntries`, `DraftKings`, `dk_`, `dk-`, `dk `, `dk.` | `dk*` (e.g. `dkcontest.csv`) | **$50,000 Cap**, Full PPR, `QB/2RB/3WR/TE/FLEX/DST` |
-| **FanDuel** | `FanDuel`, `players-list`, `entries-upload-template`, `fd_`, `fd-`, `fd `, `fd.` | `fd*` (e.g. `fdcontest.csv`) | **$60,000 Cap**, Half-PPR, `QB/2RB/3WR/TE/FLEX/DEF` |
-
-### Resolution Hierarchy
-
-1. **Explicit Paths**: Inspects file names and CSV headers passed directly to `--template-csv` or `--players-csv`.
-2. **Template Directory**: Inspects `data/templates/` (the target contest entries template is prioritized).
-3. **Player Directory**: Inspects `data/players/` (player pricing and projection files).
-4. **Data Root**: Inspects files dropped directly into `data/`.
-5. **CSV Content Fallback**: If file names are generic (e.g. `salaries.csv`), inspects headers for site tokens:
-   * DraftKings: `DST`, `TeamAbbrev`, `AvgPointsPerGame`.
-   * FanDuel: `DEF`, `FPPG`, `Injury Indicator`, `Nickname`.
-
-You can simply run the optimizer and it will automatically detect the site from your template or player files:
-```bash
-python run_optimizer.py                   # Auto-detects site from file name signatures
-
-# Or simply execute the direct launcher:
-./run_optimizer
-```
-
----
-
-## The 3-Step Routine (Each Contest / Week)
-
-| Step | Action | Target Location |
-| :--- | :--- | :--- |
-| **1. Player List** | Drop your site's player list CSV into: | `data/players/` (or `data/`) |
-| **2. Contest Template** | Drop your reserved contest entries template into: | `data/templates/` (or `data/`) |
-| **3. Run Optimizer** | Execute the runner command: | `python run_optimizer.py` (or `./run_optimizer`) |
-
-The populated, upload-ready file will be generated in:
-`data/output/Completed-<template-name>.csv`
-
----
 
 ## Strategic & Quantitative Constraints
 
@@ -112,7 +41,7 @@ The populated, upload-ready file will be generated in:
 
 7. **Normalized GPP Percentile Payout Structure**:
    * Ranks candidates against the field distribution across 5,000 Monte Carlo game trials using `np.searchsorted`.
-   * Uses dynamic finish percentiles adaptable to any contest size and entry fee:
+   * Dynamic finish percentiles adaptable to any contest size and entry fee:
      * **Top 0.01%** (1st place tier): **10,000x** entry fee
      * **Top 0.1%** (Elite tier): **500x** entry fee
      * **Top 1.0%** (High equity tier): **20x** entry fee
@@ -120,70 +49,56 @@ The populated, upload-ready file will be generated in:
      * **Top 20.0%** (Min-cash line): **1.5x** entry fee
    * CLI `--entry-fee` parameter (default: 0.05) makes Sim ROI calculation adaptable to any buy-in level.
 
----
-
-## Simulation Scale & Quantitative Dimension Parameters: (N = 500), (T = 5000), and (K = 150)
+## Simulation Dimensions: N = 500, T = 5,000, K = 150
 
 The Monte Carlo simulation pipeline parameterizes scale across three distinct mathematical dimensions:
 
 * **N = 500 Candidate Lineups (`--num-candidates`)**:
-  * **Role**: Candidate Pool Size.
-  * **Mechanism**: Rather than solving directly for the final 150 rosters, the MILP solver generates a broad pool of 500 structurally viable, high-ceiling candidates (80% primary stacked, 20% unconstrained rushing QBs). This wide candidate pool provides the search space evaluated in the game simulations.
+  * The MILP solver generates a broad pool of 500 structurally viable, high-ceiling candidates (80% primary stacked, 20% unconstrained rushing QBs).
 * **T = 5,000 Game Slate Trials (`--num-trials`)**:
-  * **Role**: Monte Carlo Slate Realizations.
-  * **Mechanism**: The number of independent, simulated realizations of the full game slate. Each trial models right-skewed player point volatility using Gamma marginal distributions and joint team offensive shocks $\exp(\sigma_{\text{team}} Z_{\text{team}} - 0.5\sigma_{\text{team}}^2)$. All 500 candidate lineups and 10,000 opponent field lineups are scored across all 5,000 game realizations.
+  * Independent simulated realizations of the full game slate with right-skewed Gamma distributions and log-normal team offensive shocks $\exp(\sigma_{\text{team}} Z_{\text{team}} - 0.5\sigma_{\text{team}}^2)$.
 * **K = 150 Portfolio Lineups (`--num-lineups`)**:
-  * **Role**: Target Entry Portfolio Size.
-  * **Mechanism**: The exact number of entries selected and exported to your contest template (default: 150 for standard FanDuel/DraftKings MME tournaments). Stage 4 greedily selects the top K = 150 lineups from the N = 500 candidates based on Simulated ROI while strictly enforcing global position and player exposure ceilings.
+  * The target entry portfolio size exported to the contest template (standard FanDuel/DraftKings 150-max MME contests).
 
----
+## Setup & Local Execution
 
-## CLI Options & Customization
-
-```bash
-python run_optimizer.py \
-  [--players-csv data/players/my-players.csv] \
-  [--template-csv data/templates/my-contest.csv] \
-  [--output-csv data/output/my-completed.csv] \
-  [--entry-fee 0.05] \
-  [--num-candidates 500] \
-  [--num-field 10000] \
-  [--num-trials 5000] \
-  [--num-lineups 150] \
-  [--stack-ratio 0.80] \
-  [--max-qb-exposure 0.25] \
-  [--max-rb-exposure 0.25] \
-  [--max-wr-exposure 0.25] \
-  [--max-te-exposure 0.25] \
-  [--max-def-exposure 0.20] \
-  [--max-exposure 0.25] \
-  [--max-repeating 6] \
-  [--randomness 0.25] \
-  [--keep-injured] \
-  [--strict-caps]
-```
-
----
-
-## Setup & Installation
+### 1. Local Environment Setup
 
 ```bash
-# 1. Clone repository
+# Clone repository
 git clone https://github.com/kel-reid/DFS-Optimizer.git
 cd DFS-Optimizer
 
-# 2. Checkout feature branch (or main)
-git checkout feature/auto-detection
-
-# 3. Create virtual environment
+# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 4. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
-
-# 5. Run optimization
-python run_optimizer.py
-# or simply:
-./run_optimizer
 ```
+
+### 2. Running the Optimizer
+
+Place your contest files in the respective directories:
+- Player list in `data/players/`
+- Entries upload template in `data/templates/`
+- (Optional) Weekly projections in `data/projections/`
+
+Then launch:
+```bash
+./run_optimizer
+# Or run with custom CLI parameters:
+python run_optimizer.py --entry-fee 0.05 --num-candidates 500 --num-trials 5000
+```
+
+The completed upload CSV will be written to `data/output/Completed-[template-name].csv`.
+
+## Running Automated Tests
+
+Run the test suite with pytest:
+
+```bash
+# Run all tests
+pytest tests/ -v
+```
+

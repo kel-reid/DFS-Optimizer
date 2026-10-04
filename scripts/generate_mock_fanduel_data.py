@@ -3,8 +3,12 @@ Script to generate realistic FanDuel NFL Main Slate player pool and 150-entry up
 Used for testing and demonstration of the MME lineup optimization pipeline.
 """
 
+from __future__ import annotations
+
 import csv
 import random
+from pathlib import Path
+
 
 def generate_mock_data():
     teams_matchups = [
@@ -80,7 +84,7 @@ def generate_mock_data():
                 else:
                     sal = random.randint(4600, 5100)
                     fppg = round(random.uniform(4.5, 8.5), 2)
-                
+
                 players.append({
                     "Id": fd_id, "Position": "RB", "First Name": r_first, "Nickname": f"{r_first} {r_last}",
                     "Last Name": r_last, "FPPG": str(fppg), "Team": team, "Opponent": opp,
@@ -147,7 +151,6 @@ def generate_mock_data():
                 "Probable Pitcher": "", "Batting Order": "", "Roster Position": "DEF", "Salary": str(sal)
             })
 
-    from pathlib import Path
     out_dir_players = Path("data/players")
     out_dir_templates = Path("data/templates")
     out_dir_players.mkdir(parents=True, exist_ok=True)
@@ -161,25 +164,26 @@ def generate_mock_data():
     ]
     players_file = out_dir_players / "mock-FanDuel-NFL-players-list.csv"
     with open(players_file, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=player_headers)
-        writer.writeheader()
-        writer.writerows(players)
+        dict_writer = csv.DictWriter(f, fieldnames=player_headers)
+        dict_writer.writeheader()
+        dict_writer.writerows(players)
     print(f"Generated {players_file} with {len(players)} players.")
 
     # Write mock 150-entry template
     template_headers = ["entry_id", "contest_id", "contest_name", "entry_fee", "QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DEF"]
-    template_file = out_dir_templates / "mock-FanDuel-NFL-entries-template.csv"
+    template_file = out_dir_templates / "mock-FanDuel-NFL-entries-upload-template.csv"
     with open(template_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(template_headers)
+        template_writer = csv.writer(f)
+        template_writer.writerow(template_headers)
         for i in range(1, 151):
             entry_id = f"8814529-{100000 + i}"
             contest_id = "104928"
             contest_name = "NFL Sunday Million ($1.5M to 1st)"
             entry_fee = "$25"
             row = [entry_id, contest_id, contest_name, entry_fee, "", "", "", "", "", "", "", "", ""]
-            writer.writerow(row)
+            template_writer.writerow(row)
     print(f"Generated {template_file} with 150 entries.")
+
 
 if __name__ == "__main__":
     generate_mock_data()

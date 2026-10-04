@@ -51,3 +51,9 @@ venv.bak/
 # Logs and databases
 *.log
 *.sqlite
+
+# Contest & transient data files (preserve directory structure via .gitkeep)
+data/*/*.csv
+data/output/*
+!data/*/.gitkeep
+uv.lock

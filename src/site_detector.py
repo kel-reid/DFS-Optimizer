@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional, Sequence, Set, Tuple
+from typing import Optional, Sequence, Set
 
 logger = logging.getLogger("DFSSiteDetector")
 

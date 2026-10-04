@@ -1,29 +1,45 @@
 #!/usr/bin/env python3
 """
-================================================================================
-FanDuel NFL DFS Optimization Pipeline (Compatibility Forwarder)
-================================================================================
-Forwards execution to src.build_fanduel_lineups for centralized maintenance.
-================================================================================
+Root backward-compatibility wrapper for the FanDuel simulation pipeline.
+Re-exports public classes, helpers, and orchestrator from src.build_fanduel_lineups.
 """
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.resolve()))
-
 from src.build_fanduel_lineups import (
-    SimOptimizerConfig,
-    FanDuelDataLoader,
     CandidatePoolGenerator,
-    OpponentFieldSimulator,
     CorrelatedGameEngine,
-    PortfolioSelector,
+    FanDuelDataLoader,
     FanDuelTemplateExporter,
+    OpponentFieldSimulator,
+    PortfolioSelector,
     SimAuditReporter,
-    parse_arguments,
+    SimOptimizerConfig,
+    apply_forward_projections,
+    find_players_csv,
+    find_projections_csv,
+    find_template_csv,
     main,
+    normalize_name,
+    parse_arguments,
+    setup_logging,
 )
+
+__all__ = [
+    "CandidatePoolGenerator",
+    "CorrelatedGameEngine",
+    "FanDuelDataLoader",
+    "FanDuelTemplateExporter",
+    "OpponentFieldSimulator",
+    "PortfolioSelector",
+    "SimAuditReporter",
+    "SimOptimizerConfig",
+    "apply_forward_projections",
+    "find_players_csv",
+    "find_projections_csv",
+    "find_template_csv",
+    "main",
+    "normalize_name",
+    "parse_arguments",
+    "setup_logging",
+]
 
 if __name__ == "__main__":
     main()

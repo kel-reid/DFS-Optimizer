@@ -1,0 +1,48 @@
+# ==============================================================================
+# DFS Optimizer Configuration Settings
+# ==============================================================================
+
+global:
+  random_seed: 42
+  log_level: "INFO"
+
+fanduel:
+  salary_cap: 60000
+  min_field_salary: 58500
+  default_entry_fee: 0.05
+  simulation:
+    num_candidates: 500
+    num_field_lineups: 10000
+    num_sim_trials: 5000
+    num_selected_lineups: 150
+  exposure_caps:
+    max_qb_exposure: 0.25
+    max_rb_exposure: 0.25
+    max_wr_exposure: 0.25
+    max_te_exposure: 0.25
+    max_def_exposure: 0.20
+    max_exposure: 0.25
+  solver:
+    stack_ratio: 0.80
+    max_repeating_players: 6
+    randomness_deviation: 0.25
+    exclude_out_injured: true
+    strict_exposure_caps: false
+
+draftkings:
+  salary_cap: 50000
+  default_entry_fee: 3.00
+  simulation:
+    num_lineups: 150
+  exposure_caps:
+    max_qb_exposure: 0.25
+    max_rb_exposure: 0.25
+    max_wr_exposure: 0.25
+    max_te_exposure: 0.25
+    max_def_exposure: 0.20
+    max_exposure: 0.25
+  solver:
+    stack_ratio: 0.80
+    max_repeating_players: 6
+    randomness_deviation: 0.25
+    exclude_out_injured: true
