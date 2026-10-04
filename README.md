@@ -4,25 +4,11 @@ A high-performance quantitative optimization and Monte Carlo simulation engine f
 
 Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming solver backend), `numpy`, and `pandas`.
 
----
 
 ## Intelligent Site Auto-Detection
 
-The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags:
+The engine automatically inspects file name signatures in `data/templates/`, `data/players/`, and `data/` to determine the target DFS platform without requiring manual flags.
 
-### Signature Detection Rules
-
-| Platform | Keyword Signatures | Prefix Match | Activated Rules |
-| :--- | :--- | :--- | :--- |
-| **DraftKings** | `DKSalaries`, `DKEntries`, `DraftKings`, `dk_`, `dk-`, `dk `, `dk.` | `dk*` (e.g. `dkcontest.csv`) | **$50,000 Cap**, Full PPR, `QB/2RB/3WR/TE/FLEX/DST` |
-| **FanDuel** | `FanDuel`, `players-list`, `entries-upload-template`, `fd_`, `fd-`, `fd `, `fd.` | `fd*` (e.g. `fdcontest.csv`) | **$60,000 Cap**, Half-PPR, `QB/2RB/3WR/TE/FLEX/DEF` |
-
-You can simply run the optimizer and it will automatically detect the site:
-```bash
-./run_optimizer
-# Or:
-python run_optimizer.py
-```
 
 ## Strategic & Quantitative Constraints
 
@@ -114,26 +100,5 @@ Run the test suite with pytest:
 ```bash
 # Run all tests
 pytest tests/ -v
-
-# Run with lint check
-ruff check .
 ```
 
----
-
-## Running with Docker & Docker Compose
-
-A production `Dockerfile` with the `coinor-cbc` solver and an unprivileged user is included.
-
-### Run with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-### Or build and run standalone container:
-
-```bash
-docker build -t dfs-optimizer .
-docker run --rm -v $(pwd)/data:/app/data dfs-optimizer
-```
