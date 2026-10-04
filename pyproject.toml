@@ -53,3 +53,6 @@ reportMissingTypeStubs = false
 python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_configs = true
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
