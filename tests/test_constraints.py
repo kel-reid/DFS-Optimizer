@@ -70,6 +70,22 @@ def test_candidate_generation_constraints(mock_fanduel_files):
         assert max(team_counts.values()) <= 4, f"Lineup exceeds 4 players from a single team: {team_counts}"
 
 
+def test_fanduel_non_default_salary_cap_enforcement(mock_fanduel_files):
+    config, _, _, _ = mock_fanduel_files
+    config.salary_cap = 52_000
+    config.num_candidates = 6
+    loader = FanDuelDataLoader(config)
+    optimizer = loader.load_and_sanitize()
+
+    generator = CandidatePoolGenerator(optimizer, config)
+    candidates, _ = generator.generate_candidate_pool()
+
+    assert len(candidates) == 6
+    for lineup in candidates:
+        total_salary = sum(p.salary for p in lineup.lineup)
+        assert total_salary <= 52_000, f"Candidate lineup exceeded custom salary cap of 52000: {total_salary}"
+
+
 def test_portfolio_selector_exposure_caps(mock_fanduel_files):
     config, _, _, _ = mock_fanduel_files
     config.num_candidates = 30
@@ -136,6 +152,38 @@ def test_draftkings_team_diversity_constraints():
         assert len(distinct) >= 3, f"DK lineup has {len(distinct)} teams (< 3): {roster_teams}"
         team_counts = Counter(roster_teams)
         assert max(team_counts.values()) <= 4, f"DK lineup exceeds 4 players from one team: {team_counts}"
+        total_salary = sum(p.salary for p in roster)
+        assert total_salary <= config.salary_cap
+
+
+def test_draftkings_non_default_salary_cap_enforcement():
+    from pydfs_lineup_optimizer import Player, Site, Sport, get_optimizer
+    from pydfs_lineup_optimizer.player import GameInfo
+
+    from src.build_draftkings_lineups import DKOptimizerConfig, DraftKingsLineupPipeline
+
+    opt = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
+    game1 = GameInfo("KC", "BUF", None)
+    game2 = GameInfo("PHI", "DAL", None)
+    teams = [("KC", game1), ("BUF", game1), ("PHI", game2), ("DAL", game2)]
+    players = []
+    pid = 1
+    for team, g_info in teams:
+        for pos in ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "DST"]:
+            sal = 4000 if pid % 2 == 0 else 6000
+            players.append(Player(str(pid), f"{team}_{pos}", f"Last_{pid}", [pos], team, sal, 15.0, game_info=g_info))
+            pid += 1
+
+    opt.player_pool.load_players(players)
+    config = DKOptimizerConfig(salary_cap=42_000)
+    pipeline = DraftKingsLineupPipeline(config, opt)
+    pipeline.configure_optimizer_instance(opt)
+
+    lineups = list(opt.optimize(n=3))
+    assert len(lineups) == 3
+    for lineup in lineups:
+        total_salary = sum(p.salary for p in lineup.lineup)
+        assert total_salary <= 42_000, f"DK lineup exceeded custom salary cap of 42000: {total_salary}"
 
 
 if __name__ == "__main__":

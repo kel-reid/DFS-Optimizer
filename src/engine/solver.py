@@ -78,6 +78,7 @@ class CandidatePoolGenerator:
         if len(self.optimizer.player_pool.available_teams) >= 3:
             self.optimizer.set_total_teams(min_teams=3)
         self.optimizer.settings.max_from_one_team = 4
+        self.optimizer.settings.budget = self.config.salary_cap
         # Ensure diversity across candidates by setting max 35% exposure during candidate phase
         for p in self.optimizer.player_pool.all_players:
             p.max_exposure = 0.35
@@ -107,6 +108,7 @@ class CandidatePoolGenerator:
             if len(opt_unconstrained.player_pool.available_teams) >= 3:
                 opt_unconstrained.set_total_teams(min_teams=3)
             opt_unconstrained.settings.max_from_one_team = 4
+            opt_unconstrained.settings.budget = self.config.salary_cap
             for p in opt_unconstrained.player_pool.all_players:
                 p.max_exposure = 0.35
 

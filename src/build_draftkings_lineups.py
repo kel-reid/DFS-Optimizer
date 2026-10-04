@@ -307,6 +307,7 @@ class DraftKingsLineupPipeline:
         if len(opt.player_pool.available_teams) >= 3:
             opt.set_total_teams(min_teams=3)
         opt.settings.max_from_one_team = 4
+        opt.settings.budget = self.config.salary_cap
 
     def generate_lineups(self) -> List[Lineup]:
         n = self.config.num_lineups
