@@ -7,6 +7,7 @@ from src.data.loader import (
     FanDuelDataLoader,
     find_players_csv,
     find_template_csv,
+    normalize_week,
 )
 from src.data.projections import (
     apply_forward_projections,
@@ -21,5 +22,6 @@ __all__ = [
     "find_players_csv",
     "find_projections_csv",
     "find_template_csv",
+    "normalize_week",
     "normalize_name",
 ]

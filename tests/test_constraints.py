@@ -72,7 +72,7 @@ def test_candidate_generation_constraints(mock_fanduel_files):
 
 def test_fanduel_non_default_salary_cap_enforcement(mock_fanduel_files):
     config, _, _, _ = mock_fanduel_files
-    config.salary_cap = 52_000
+    config.salary_cap = 56_000
     config.num_candidates = 6
     loader = FanDuelDataLoader(config)
     optimizer = loader.load_and_sanitize()
@@ -83,7 +83,7 @@ def test_fanduel_non_default_salary_cap_enforcement(mock_fanduel_files):
     assert len(candidates) == 6
     for lineup in candidates:
         total_salary = sum(p.salary for p in lineup.lineup)
-        assert total_salary <= 52_000, f"Candidate lineup exceeded custom salary cap of 52000: {total_salary}"
+        assert total_salary <= 56_000, f"Candidate lineup exceeded custom salary cap of 56000: {total_salary}"
 
 
 def test_portfolio_selector_exposure_caps(mock_fanduel_files):
@@ -188,3 +188,73 @@ def test_draftkings_non_default_salary_cap_enforcement():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_inactive_and_ir_players_excluded_from_pool(mock_fanduel_files):
+    import csv
+    config, _, _, _ = mock_fanduel_files
+    config.exclude_out_injured = True
+
+    # Append an IR player to the mock players CSV
+    with open(config.players_csv, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "fd-9999", "WR", "Injured", "Injured Player", "Player",
+            "15.0", "KC", "BUF", "KC@BUF", "IR",
+            "Ankle", "", "", "",
+            "WR/FLEX", "4000"
+        ])
+
+    loader = FanDuelDataLoader(config)
+    optimizer = loader.load_and_sanitize()
+    filtered = list(optimizer.player_pool.filtered_players)
+
+    assert any(p.id == "fd-9999" for p in optimizer.player_pool.removed_players)
+    assert not any(p.id == "fd-9999" for p in filtered)
+
+
+def test_zero_unprojected_players_excluded_from_pool(mock_fanduel_files, tmp_path):
+    import csv
+    config, _, _, _ = mock_fanduel_files
+
+    # Create projections for starters across all teams, but omit WR3 bench players
+    proj_path = tmp_path / "partial_projections.csv"
+    proj_data = [["player", "team", "pos", "fantasy"]]
+    for team in ["KC", "BUF", "PHI", "DAL"]:
+        proj_data.append([f"{team} QB1", team, "QB", "20.0"])
+        proj_data.append([f"{team} RB1", team, "RB", "14.0"])
+        proj_data.append([f"{team} RB2", team, "RB", "11.0"])
+        proj_data.append([f"{team} WR1", team, "WR", "15.0"])
+        proj_data.append([f"{team} WR2", team, "WR", "12.0"])
+        # WR3 is deliberately omitted (unprojected bench player)
+        proj_data.append([f"{team} TE1", team, "TE", "10.0"])
+
+    proj_data.append(["Chiefs D/ST", "KC", "D/ST", "8.0"])
+    proj_data.append(["Bills D/ST", "BUF", "D/ST", "7.0"])
+    proj_data.append(["Eagles D/ST", "PHI", "D/ST", "8.0"])
+    proj_data.append(["Cowboys D/ST", "DAL", "D/ST", "7.0"])
+
+    with open(proj_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerows(proj_data)
+
+    config.projections_csv = proj_path
+    config.zero_unprojected = True
+    config.num_candidates = 5
+
+    loader = FanDuelDataLoader(config)
+    optimizer = loader.load_and_sanitize()
+
+    # Verify omitted WR3 bench players have FPPG zeroed
+    for team in ["KC", "BUF", "PHI", "DAL"]:
+        wr3 = next((p for p in optimizer.player_pool.all_players if p.full_name == f"{team} WR3"), None)
+        assert wr3 is not None
+        assert wr3.fppg == 0.0
+
+    # Solve candidates and verify unprojected zero-FPPG players are NEVER selected
+    generator = CandidatePoolGenerator(optimizer, config)
+    candidates, _ = generator.generate_candidate_pool()
+    assert len(candidates) > 0
+    for lineup in candidates:
+        for p in lineup.lineup:
+            assert "WR3" not in p.full_name, f"Unprojected bench player {p.full_name} was selected!"

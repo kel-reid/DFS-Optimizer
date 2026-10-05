@@ -13,7 +13,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger("FanDuelSimOptimizer")
 
@@ -46,9 +46,9 @@ class SimOptimizerConfig:
     """Runtime configuration and quantitative hyperparameters for the FanDuel simulation engine."""
 
     # File paths
-    players_csv: Path = Path("data/players/FanDuel-NFL-2026 EDT-10 EDT-04 EDT-134747-players-list.csv")
-    template_csv: Path = Path("data/templates/FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv")
-    output_csv: Path = Path("data/output/Completed-FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv")
+    players_csv: Path = Path("data/week-05/main-slate/players.csv")
+    template_csv: Path = Path("data/week-05/main-slate/Completed-FanDuel-NFL-2026-10-04-134747-entries-upload-template.csv")
+    output_csv: Path = Path("data/week-05/main-slate/completed_lineups.csv")
     projections_csv: Optional[Path] = None
 
     # Simulation scale parameters
@@ -76,7 +76,19 @@ class SimOptimizerConfig:
     randomness_deviation: float = 0.25  # ±25% uniform random projection jitter during MILP solving
     exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
     strict_exposure_caps: bool = False # If True, fail if candidate pool cannot fulfill K lineups under hard caps
+    zero_unprojected: bool = True    # SaberSim standard: zeroes out unprojected / N/A players
     random_seed: int = 42            # Seed for reproducible Monte Carlo trials
+
+    # Slate configuration & format
+    slate: Optional[str] = None       # Specific slate name (e.g. "sunday-night", "main-slate")
+    week: Optional[str] = "week-05"   # NFL Week (e.g. "week-05", "5")
+    slate_date: Optional[str] = None  # Slate calendar date (e.g. "2026-10-04")
+    is_single_game: bool = False      # True for Single Game / Showdown format
+
+    def __post_init__(self) -> None:
+        if self.week:
+            from src.data.loader import normalize_week
+            self.week = normalize_week(self.week)
 
     @classmethod
     def from_settings(cls, settings_path: Optional[Path] = None, **overrides: Any) -> SimOptimizerConfig:
@@ -116,14 +128,14 @@ class SimOptimizerConfig:
         for k in ["max_repeating_players"]:
             if k in solver_cfg:
                 params[k] = int(solver_cfg[k])
-        for k in ["exclude_out_injured", "strict_exposure_caps"]:
+        for k in ["exclude_out_injured", "strict_exposure_caps", "zero_unprojected"]:
             if k in solver_cfg:
                 params[k] = bool(solver_cfg[k])
 
         if "random_seed" in global_cfg:
             params["random_seed"] = int(global_cfg["random_seed"])
 
-        env_map = {
+        env_map: Dict[str, Tuple[str, Any]] = {
             "DFS_SALARY_CAP": ("salary_cap", int),
             "DFS_MIN_FIELD_SALARY": ("min_field_salary", int),
             "DFS_ENTRY_FEE": ("entry_fee", float),
@@ -134,6 +146,12 @@ class SimOptimizerConfig:
             "DFS_STACK_RATIO": ("stack_ratio", float),
             "DFS_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_RANDOMNESS": ("randomness_deviation", float),
+            "DFS_ZERO_UNPROJECTED": ("zero_unprojected", lambda v: str(v).lower() in ("1", "true", "yes")),
+            "DFS_SLATE": ("slate", str),
+            "DFS_WEEK": ("week", str),
+            "DFS_SLATE_DATE": ("slate_date", str),
+            "DFS_IS_SINGLE_GAME": ("is_single_game", lambda v: str(v).lower() in ("1", "true", "yes")),
+
             "DFS_RANDOM_SEED": ("random_seed", int),
         }
         for env_var, (attr, cast) in env_map.items():
@@ -142,6 +160,51 @@ class SimOptimizerConfig:
                 params[attr] = cast(val)
 
         params.update({k: v for k, v in overrides.items() if v is not None})
+
+        if "week" in params and params["week"] is not None:
+            from src.data.loader import normalize_week
+            params["week"] = normalize_week(params["week"])
+
+        # Auto-discover slate-specific paths if slate is provided and explicit paths are missing
+        slate = params.get("slate")
+        week = params.get("week")
+        slate_date = params.get("slate_date")
+        if slate:
+            from src.data.loader import find_players_csv, find_template_csv, normalize_week
+            from src.data.projections import find_projections_csv
+
+            norm_week = normalize_week(week)
+            if "players_csv" not in overrides or params.get("players_csv") is None:
+                try:
+                    params["players_csv"] = find_players_csv(slate=slate, week=norm_week, slate_date=slate_date)
+                except Exception:
+                    pass
+            if "template_csv" not in overrides or params.get("template_csv") is None:
+                try:
+                    params["template_csv"] = find_template_csv(slate=slate, week=norm_week, slate_date=slate_date)
+                except Exception:
+                    pass
+            if "projections_csv" not in overrides or params.get("projections_csv") is None:
+                try:
+                    params["projections_csv"] = find_projections_csv(slate=slate, week=norm_week, slate_date=slate_date)
+                except Exception:
+                    pass
+            if "output_csv" not in overrides or params.get("output_csv") is None:
+                w_str = norm_week or "week-05"
+                slate_dir = Path(f"data/{w_str}/{slate}")
+                if not slate_dir.is_dir() and slate_date:
+                    date_dir = Path(f"data/{slate_date}/{slate}")
+                    if date_dir.is_dir():
+                        slate_dir = date_dir
+                if slate_dir.is_dir():
+                    params["output_csv"] = slate_dir / "completed_lineups.csv"
+                else:
+                    out_d = Path(f"data/output/{slate}")
+                    out_d.mkdir(parents=True, exist_ok=True)
+                    tmpl_p = params.get("template_csv")
+                    tmpl_name = tmpl_p.name if tmpl_p else "template.csv"
+                    params["output_csv"] = out_d / f"Completed-{tmpl_name}"
+
         return cls(**params)
 
 
@@ -197,7 +260,7 @@ class DraftKingsConfig:
         if "exclude_out_injured" in solver_cfg:
             params["exclude_out_injured"] = bool(solver_cfg["exclude_out_injured"])
 
-        env_map = {
+        env_map: Dict[str, Tuple[str, Any]] = {
             "DFS_DK_SALARY_CAP": ("salary_cap", int),
             "DFS_DK_NUM_LINEUPS": ("num_lineups", int),
             "DFS_DK_STACK_RATIO": ("stack_ratio", float),

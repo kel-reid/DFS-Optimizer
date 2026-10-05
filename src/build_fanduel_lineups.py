@@ -34,6 +34,7 @@ from src.data import (
     find_projections_csv,
     find_template_csv,
     normalize_name,
+    normalize_week,
 )
 from src.engine import (
     CandidatePoolGenerator,
@@ -59,6 +60,7 @@ __all__ = [
     "find_projections_csv",
     "find_template_csv",
     "main",
+    "normalize_week",
     "normalize_name",
     "parse_arguments",
     "setup_logging",
@@ -108,27 +110,49 @@ def parse_arguments() -> SimOptimizerConfig:
     )
     parser.add_argument("--randomness", type=float, default=default_cfg.randomness_deviation)
     parser.add_argument("--keep-injured", action="store_true", default=False)
+    parser.add_argument("--zero-unprojected", action="store_true", default=default_cfg.zero_unprojected, help="Zero out unprojected / N/A players (SaberSim standard)")
+    parser.add_argument("--keep-unprojected", action="store_true", default=False, help="Retain baseline FPPG for unprojected players")
     parser.add_argument(
         "--strict-caps",
         action="store_true",
         default=default_cfg.strict_exposure_caps,
         help="Strictly enforce exposure caps; fail if candidate pool cannot fulfill K lineups without cap overage",
     )
+    parser.add_argument("--slate", type=str, default=default_cfg.slate, help="Target slate identifier (e.g. sunday-night, main-slate).")
+    parser.add_argument("--week", type=str, default=default_cfg.week, help="NFL Week (e.g. 5, 05, week-05).")
+    parser.add_argument("--date", type=str, default=default_cfg.slate_date, help="Slate date in YYYY-MM-DD format (e.g. 2026-10-04).")
+    parser.add_argument("--single-game", action="store_true", default=default_cfg.is_single_game, help="Force Single Game (Showdown) optimizer format.")
 
     args = parser.parse_args()
 
-    players_path = find_players_csv(args.players_csv)
-    template_path = find_template_csv(args.template_csv)
-    projections_path = find_projections_csv(args.projections_csv)
+    norm_week = normalize_week(args.week)
+
+    players_path = find_players_csv(args.players_csv, slate=args.slate, week=norm_week, slate_date=args.date)
+    template_path = find_template_csv(args.template_csv, slate=args.slate, week=norm_week, slate_date=args.date)
+    projections_path = find_projections_csv(args.projections_csv, slate=args.slate, week=norm_week, slate_date=args.date)
 
     if args.output_csv:
         output_path = args.output_csv
+    elif args.slate:
+        w_str = norm_week or "week-05"
+        slate_dir = Path(f"data/{w_str}/{args.slate}")
+        if not slate_dir.is_dir() and args.date:
+            date_dir = Path(f"data/{args.date}/{args.slate}")
+            if date_dir.is_dir():
+                slate_dir = date_dir
+        if slate_dir.is_dir():
+            output_path = slate_dir / "completed_lineups.csv"
+        else:
+            output_dir = Path(f"data/output/{args.slate}")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"Completed-{template_path.name}"
     else:
         output_dir = Path("data/output")
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"Completed-{template_path.name}"
 
     exclude_injured = False if args.keep_injured else default_cfg.exclude_out_injured
+    zero_unproj = False if args.keep_unprojected else default_cfg.zero_unprojected
 
     return SimOptimizerConfig.from_settings(
         players_csv=players_path,
@@ -151,6 +175,11 @@ def parse_arguments() -> SimOptimizerConfig:
         randomness_deviation=args.randomness,
         exclude_out_injured=exclude_injured,
         strict_exposure_caps=args.strict_caps,
+        zero_unprojected=zero_unproj,
+        slate=args.slate,
+        week=norm_week,
+        slate_date=args.date,
+        is_single_game=args.single_game,
     )
 
 
@@ -172,7 +201,7 @@ def main() -> None:
     # 1. Ingest Data & Filter Backup QBs / Apply Forward Projections
     loader = FanDuelDataLoader(config)
     optimizer = loader.load_and_sanitize()
-    players = list(optimizer.player_pool.all_players)
+    players = list(optimizer.player_pool.filtered_players)
 
     # 2. Stage 1: Generate Candidate Pool of Lineups (MILP)
     candidate_generator = CandidatePoolGenerator(optimizer, config)

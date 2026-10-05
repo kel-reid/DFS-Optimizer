@@ -53,7 +53,8 @@ venv.bak/
 *.sqlite
 
 # Contest & transient data files (preserve directory structure via .gitkeep)
-data/*/*.csv
+data/**/*.csv
+data/*.csv
 data/output/*
-!data/*/.gitkeep
+!data/**/.gitkeep
 uv.lock
