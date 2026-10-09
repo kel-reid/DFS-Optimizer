@@ -189,3 +189,30 @@ def test_single_game_exporter_schema(tmp_path: Path):
         assert len(row1) == 9
         assert ":" in row1[4]
         assert ":" in row1[5]
+
+
+def test_sim_optimizer_config_exposure_bounds_validation():
+    import pytest
+
+    # Direct instantiation with invalid bounds
+    with pytest.raises(ValueError, match="Invalid single_game_max_exposure"):
+        SimOptimizerConfig(single_game_max_exposure=-0.1)
+
+    with pytest.raises(ValueError, match="Invalid single_game_max_exposure"):
+        SimOptimizerConfig(single_game_max_exposure=1.05)
+
+    with pytest.raises(ValueError, match="Invalid max_qb_exposure"):
+        SimOptimizerConfig(max_qb_exposure=-0.01)
+
+    with pytest.raises(ValueError, match="Invalid max_exposure"):
+        SimOptimizerConfig(max_exposure=1.5)
+
+    # from_settings with overrides
+    with pytest.raises(ValueError, match="Invalid single_game_max_exposure"):
+        SimOptimizerConfig.from_settings(single_game_max_exposure=-0.5)
+
+    # Valid boundaries: 0.0 and 1.0 must succeed
+    cfg_zero = SimOptimizerConfig(single_game_max_exposure=0.0, max_exposure=0.0)
+    assert cfg_zero.single_game_max_exposure == 0.0
+    cfg_one = SimOptimizerConfig(single_game_max_exposure=1.0, max_exposure=1.0)
+    assert cfg_one.single_game_max_exposure == 1.0

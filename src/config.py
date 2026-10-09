@@ -91,6 +91,21 @@ class SimOptimizerConfig:
             from src.data.loader import normalize_week
             self.week = normalize_week(self.week)
 
+        exposure_fields = [
+            ("max_qb_exposure", self.max_qb_exposure),
+            ("max_rb_exposure", self.max_rb_exposure),
+            ("max_wr_exposure", self.max_wr_exposure),
+            ("max_te_exposure", self.max_te_exposure),
+            ("max_def_exposure", self.max_def_exposure),
+            ("max_exposure", self.max_exposure),
+            ("single_game_max_exposure", self.single_game_max_exposure),
+        ]
+        for name, val in exposure_fields:
+            if not (0.0 <= val <= 1.0):
+                raise ValueError(
+                    f"Invalid {name}: {val}. Exposure caps must be between 0.0 and 1.0."
+                )
+
     @classmethod
     def from_settings(cls, settings_path: Optional[Path] = None, **overrides: Any) -> SimOptimizerConfig:
         """Constructs SimOptimizerConfig by merging config/settings.yaml, environment variables, and keyword overrides."""
