@@ -126,8 +126,8 @@ class SimOptimizerConfig:
 
         params: Dict[str, Any] = {}
 
-        b_qbs = fd_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
-        if b_qbs:
+        b_qbs = fd_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks"))
+        if b_qbs is not None:
             params["backup_quarterbacks"] = tuple(b_qbs)
 
         if "salary_cap" in fd_cfg:
@@ -278,8 +278,8 @@ class DraftKingsConfig:
 
         params: Dict[str, Any] = {}
 
-        b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
-        if b_qbs:
+        b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks"))
+        if b_qbs is not None:
             params["backup_quarterbacks"] = tuple(b_qbs)
 
         if "salary_cap" in dk_cfg:
@@ -311,8 +311,8 @@ class DraftKingsConfig:
             "DFS_DK_RANDOMNESS": ("randomness_deviation", float),
             "DFS_DK_MAX_DST_EXPOSURE": ("max_dst_exposure", float),
             "DFS_DK_MAX_DEF_EXPOSURE": ("max_dst_exposure", float),
-            "DFS_DK_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
             "DFS_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
+            "DFS_DK_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
         }
         for env_var, (attr, cast) in env_map.items():
             val = os.environ.get(env_var)

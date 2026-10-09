@@ -74,3 +74,39 @@ def test_draftkings_loader_filters_configured_backup_qbs(tmp_path):
 
     assert starter.fppg == 22.0
     assert backup.fppg == 0.0
+
+
+def test_empty_backup_quarterbacks_in_custom_yaml(tmp_path):
+    """Verify that an explicit empty list in YAML settings is preserved and does not fall back to default."""
+    yaml_file = tmp_path / "custom_settings.yaml"
+    yaml_file.write_text(
+        "global:\n"
+        "  backup_quarterbacks:\n"
+        "    - Global QB\n"
+        "fanduel:\n"
+        "  backup_quarterbacks: []\n"
+        "draftkings:\n"
+        "  backup_quarterbacks: []\n",
+        encoding="utf-8",
+    )
+
+    fd_cfg = SimOptimizerConfig.from_settings(settings_path=yaml_file)
+    assert fd_cfg.backup_quarterbacks == ()
+
+    dk_cfg = DraftKingsConfig.from_settings(settings_path=yaml_file)
+    assert dk_cfg.backup_quarterbacks == ()
+
+    dk_opt_cfg = DKOptimizerConfig.from_settings(settings_path=yaml_file)
+    assert dk_opt_cfg.backup_quarterbacks == ()
+
+
+def test_draftkings_env_precedence(monkeypatch):
+    """Verify DFS_DK_BACKUP_QUARTERBACKS overrides generic DFS_BACKUP_QUARTERBACKS when both are present."""
+    monkeypatch.setenv("DFS_BACKUP_QUARTERBACKS", "Generic QB")
+    monkeypatch.setenv("DFS_DK_BACKUP_QUARTERBACKS", "DraftKings Specific QB")
+
+    dk_cfg = DraftKingsConfig.from_settings()
+    assert dk_cfg.backup_quarterbacks == ("DraftKings Specific QB",)
+
+    dk_opt_cfg = DKOptimizerConfig.from_settings()
+    assert dk_opt_cfg.backup_quarterbacks == ("DraftKings Specific QB",)
