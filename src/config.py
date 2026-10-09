@@ -85,11 +85,19 @@ class SimOptimizerConfig:
     week: Optional[str] = "week-05"   # NFL Week (e.g. "week-05", "5")
     slate_date: Optional[str] = None  # Slate calendar date (e.g. "2026-10-04")
     is_single_game: bool = False      # True for Single Game / Showdown format
+    backup_quarterbacks: Optional[Tuple[str, ...]] = None  # Non-starting backup QBs to zero out
 
     def __post_init__(self) -> None:
         if self.week:
             from src.data.loader import normalize_week
             self.week = normalize_week(self.week)
+
+        if self.backup_quarterbacks is None:
+            cfg_dict = load_yaml_settings()
+            global_cfg = cfg_dict.get("global", {})
+            fd_cfg = cfg_dict.get("fanduel", {})
+            b_qbs = fd_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
+            self.backup_quarterbacks = tuple(b_qbs) if b_qbs else ()
 
         exposure_fields = [
             ("max_qb_exposure", self.max_qb_exposure),
@@ -117,6 +125,10 @@ class SimOptimizerConfig:
         solver_cfg = fd_cfg.get("solver", {})
 
         params: Dict[str, Any] = {}
+
+        b_qbs = fd_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks"))
+        if b_qbs is not None:
+            params["backup_quarterbacks"] = tuple(b_qbs)
 
         if "salary_cap" in fd_cfg:
             params["salary_cap"] = int(fd_cfg["salary_cap"])
@@ -168,7 +180,7 @@ class SimOptimizerConfig:
             "DFS_WEEK": ("week", str),
             "DFS_SLATE_DATE": ("slate_date", str),
             "DFS_IS_SINGLE_GAME": ("is_single_game", lambda v: str(v).lower() in ("1", "true", "yes")),
-
+            "DFS_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
             "DFS_RANDOM_SEED": ("random_seed", int),
         }
         for env_var, (attr, cast) in env_map.items():
@@ -244,17 +256,31 @@ class DraftKingsConfig:
     max_dst_exposure: float = 0.20
     max_exposure: float = 0.25
     exclude_out_injured: bool = True
+    backup_quarterbacks: Optional[Tuple[str, ...]] = None
+
+    def __post_init__(self) -> None:
+        if self.backup_quarterbacks is None:
+            cfg_dict = load_yaml_settings()
+            global_cfg = cfg_dict.get("global", {})
+            dk_cfg = cfg_dict.get("draftkings", {})
+            b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
+            self.backup_quarterbacks = tuple(b_qbs) if b_qbs else ()
 
     @classmethod
     def from_settings(cls, settings_path: Optional[Path] = None, **overrides: Any) -> DraftKingsConfig:
         """Constructs DraftKingsConfig by merging config/settings.yaml, environment variables, and keyword overrides."""
         cfg_dict = load_yaml_settings(settings_path)
+        global_cfg = cfg_dict.get("global", {})
         dk_cfg = cfg_dict.get("draftkings", {})
         sim_cfg = dk_cfg.get("simulation", {})
         exp_cfg = dk_cfg.get("exposure_caps", {})
         solver_cfg = dk_cfg.get("solver", {})
 
         params: Dict[str, Any] = {}
+
+        b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks"))
+        if b_qbs is not None:
+            params["backup_quarterbacks"] = tuple(b_qbs)
 
         if "salary_cap" in dk_cfg:
             params["salary_cap"] = int(dk_cfg["salary_cap"])
@@ -285,6 +311,8 @@ class DraftKingsConfig:
             "DFS_DK_RANDOMNESS": ("randomness_deviation", float),
             "DFS_DK_MAX_DST_EXPOSURE": ("max_dst_exposure", float),
             "DFS_DK_MAX_DEF_EXPOSURE": ("max_dst_exposure", float),
+            "DFS_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
+            "DFS_DK_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
         }
         for env_var, (attr, cast) in env_map.items():
             val = os.environ.get(env_var)
