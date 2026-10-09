@@ -69,6 +69,7 @@ class SimOptimizerConfig:
     max_te_exposure: float = 0.25    # Tight end exposure ceiling (25% = 37 lineups)
     max_def_exposure: float = 0.20   # Team defense exposure ceiling (20% = 30 lineups)
     max_exposure: float = 0.25       # General individual player exposure ceiling (25% = 37 lineups)
+    single_game_max_exposure: float = 0.65  # Default exposure ceiling for Single Game / Showdown slates
 
     # Candidate generation solver constraints
     stack_ratio: float = 0.80        # 80% primary stacked (400) / 20% unconstrained (100)
@@ -118,7 +119,7 @@ class SimOptimizerConfig:
         if "num_selected_lineups" in sim_cfg:
             params["num_selected_lineups"] = int(sim_cfg["num_selected_lineups"])
 
-        for k in ["max_qb_exposure", "max_rb_exposure", "max_wr_exposure", "max_te_exposure", "max_def_exposure", "max_exposure"]:
+        for k in ["max_qb_exposure", "max_rb_exposure", "max_wr_exposure", "max_te_exposure", "max_def_exposure", "max_exposure", "single_game_max_exposure"]:
             if k in exp_cfg:
                 params[k] = float(exp_cfg[k])
 
@@ -147,6 +148,7 @@ class SimOptimizerConfig:
             "DFS_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_RANDOMNESS": ("randomness_deviation", float),
             "DFS_ZERO_UNPROJECTED": ("zero_unprojected", lambda v: str(v).lower() in ("1", "true", "yes")),
+            "DFS_SINGLE_GAME_MAX_EXPOSURE": ("single_game_max_exposure", float),
             "DFS_SLATE": ("slate", str),
             "DFS_WEEK": ("week", str),
             "DFS_SLATE_DATE": ("slate_date", str),

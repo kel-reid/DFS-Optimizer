@@ -54,26 +54,39 @@ class PortfolioSelector:
         # Sort candidate indices by ROI descending (secondary key: top1_rates)
         sort_order = np.lexsort((-top1_rates, -sim_roi))
 
+        is_single_game = getattr(self.config, "is_single_game", False)
+        sg_default_cap = getattr(self.config, "single_game_max_exposure", 0.65)
+        classic_default = 0.25
+        classic_def_default = 0.20
+
         def get_cap(player: Player) -> int:
             pos = set(player.positions)
             if "D" in pos:
                 cap_rate = self.config.max_def_exposure
+                if is_single_game and cap_rate == classic_def_default:
+                    cap_rate = sg_default_cap
             elif "QB" in pos:
                 cap_rate = self.config.max_qb_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             elif "RB" in pos:
                 cap_rate = self.config.max_rb_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             elif "WR" in pos:
                 cap_rate = self.config.max_wr_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             elif "TE" in pos:
                 cap_rate = self.config.max_te_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             else:
                 cap_rate = self.config.max_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
 
-            # For Single Game slates, scale caps appropriately if using classic default (0.25)
-            if getattr(self.config, "is_single_game", False) and cap_rate <= 0.25:
-                cap_rate = 0.65
-
-            return max(1, math.floor(K * cap_rate))
+            return math.floor(K * cap_rate)
 
         selected: List[Lineup] = []
         player_usage: Counter[str] = Counter()
@@ -190,26 +203,40 @@ class SimAuditReporter:
                     if opp_team in off_teams:
                         def_opp_violations += 1
 
+        is_single_game = getattr(config, "is_single_game", False)
+        sg_default_cap = getattr(config, "single_game_max_exposure", 0.65)
+        classic_default = 0.25
+        classic_def_default = 0.20
+
         # Evaluate exposure cap compliance across all rostered players
         def get_pos_cap(p: Player) -> int:
             pos = set(p.positions)
             if "D" in pos:
                 cap_rate = config.max_def_exposure
+                if is_single_game and cap_rate == classic_def_default:
+                    cap_rate = sg_default_cap
             elif "QB" in pos:
                 cap_rate = config.max_qb_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             elif "RB" in pos:
                 cap_rate = config.max_rb_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             elif "WR" in pos:
                 cap_rate = config.max_wr_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             elif "TE" in pos:
                 cap_rate = config.max_te_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
             else:
                 cap_rate = config.max_exposure
+                if is_single_game and cap_rate == classic_default:
+                    cap_rate = sg_default_cap
 
-            if getattr(config, "is_single_game", False) and cap_rate <= 0.25:
-                cap_rate = 0.65
-
-            return max(1, math.floor(total * cap_rate))
+            return math.floor(total * cap_rate)
 
         cap_violations = []
         for name, count in player_counts.items():

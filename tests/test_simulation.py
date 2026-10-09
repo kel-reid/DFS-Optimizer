@@ -187,5 +187,47 @@ def test_single_game_simulation_and_mvp_weighting(tmp_path: Path):
     assert len(selected) == 2
 
 
+def test_single_game_explicit_user_caps_preserved(tmp_path: Path):
+    """
+    Verifies that explicit user exposure caps (e.g. max_qb_exposure=0.20)
+    are strictly preserved in Single Game slates rather than being overridden by default 0.65.
+    """
+    import numpy as np
+    from pydfs_lineup_optimizer import Lineup, Player
+    from pydfs_lineup_optimizer.player import LineupPlayer
+
+    from src.config import SimOptimizerConfig
+    from src.engine.selector import PortfolioSelector
+
+    qb = Player("1", "QB", "One", ["QB"], "DET", 10000, 20.0)
+    rb = Player("2", "RB", "Two", ["RB"], "DET", 8000, 15.0)
+
+    # When user explicitly specifies max_qb_exposure = 0.20 on a 10-lineup portfolio
+    cfg_custom = SimOptimizerConfig(
+        is_single_game=True,
+        num_selected_lineups=10,
+        max_qb_exposure=0.20,
+        strict_exposure_caps=True,
+    )
+    sel_custom = PortfolioSelector(cfg_custom)
+
+    # Build 10 mock lineups containing QB and RB
+    candidates = []
+    for _ in range(10):
+        l_players = [
+            LineupPlayer(qb, "MVP"),
+            LineupPlayer(rb, "UTIL"),
+        ]
+        candidates.append(Lineup(l_players))
+
+    dummy_roi = np.ones(10, dtype=np.float32)
+    dummy_wins = np.zeros(10, dtype=np.int32)
+    dummy_top1 = np.ones(10, dtype=np.float32)
+
+    # With strict caps: must raise ValueError selecting exactly floor(10 * 0.20) = 2 lineups
+    with pytest.raises(ValueError, match="could only select 2 / 10 lineups"):
+        sel_custom.select_portfolio(candidates, dummy_roi, dummy_wins, dummy_top1)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
