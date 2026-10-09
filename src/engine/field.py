@@ -34,6 +34,8 @@ class OpponentFieldSimulator:
         self.config = config
         self.P = len(players)
 
+        self.is_single_game = bool(getattr(self.config, "is_single_game", False))
+
         # Categorize player indices by position
         self.qb_indices: List[int] = []
         self.rb_indices: List[int] = []
@@ -56,9 +58,143 @@ class OpponentFieldSimulator:
 
         self.flex_indices = self.rb_indices + self.wr_indices + self.te_indices
 
+        # Auto-detect Single Game if not explicitly set in config
+        unique_teams = {p.team for p in players if p.team}
+        if not self.is_single_game and len(unique_teams) <= 2 and (len(self.def_indices) == 0 or len(players) <= 100):
+            self.is_single_game = True
+
     def simulate_field(self) -> np.ndarray:
         """
-        Generates binary matrix field_matrix of shape (M, P).
+        Generates binary/weighted matrix field_matrix of shape (M, P).
+        Dispatches to Single Game or Classic simulation depending on slate structure.
+        """
+        if self.is_single_game:
+            return self._simulate_single_game_field()
+        return self._simulate_classic_field()
+
+    def _simulate_single_game_field(self) -> np.ndarray:
+        """
+        Simulates tournament field for Single Game / Showdown slates:
+          - 5-player rosters: 1 MVP (1.5x score multiplier) + 4 AnyFLEX
+          - Enforces team diversity (players from both teams) and salary interval
+          - Encodes into weighted NumPy matrix F in {0, 1.0, 1.5}^(M x P)
+        """
+        M = self.config.num_field_lineups
+        print()
+        logger.info("=" * 70)
+        logger.info("STAGE 2: SIMULATING OPPONENT FIELD - SINGLE GAME (M = %d LINEUPS)", M)
+        logger.info("=" * 70)
+        logger.info("Sampled %s realistic Single Game rosters (1 MVP + 4 AnyFLEX).", f"{M:,}")
+
+        valid_indices = [idx for idx, p in enumerate(self.players) if p.fppg > 0.0]
+        if len(valid_indices) < 5:
+            raise RuntimeError(
+                f"Insufficient active players ({len(valid_indices)}) to sample 5-player Single Game rosters."
+            )
+
+        salaries = np.array([p.salary for p in self.players], dtype=np.float32)
+        fppgs = np.array([max(0.1, p.fppg) for p in self.players], dtype=np.float32)
+        player_teams = np.array([p.team for p in self.players])
+        avail_teams = np.unique(player_teams[valid_indices])
+        check_two_teams = len(avail_teams) >= 2
+
+        alpha = 2.2
+        efficiency = fppgs / (salaries / 1000.0)
+
+        # FLEX selection probabilities (power-law on points-per-dollar efficiency)
+        raw_flex = np.power(efficiency[valid_indices], alpha)
+        s_flex = np.sum(raw_flex)
+        p_flex = raw_flex / s_flex if s_flex > 0 else np.ones(len(valid_indices)) / len(valid_indices)
+
+        # MVP selection probabilities (stars dominate MVP ownership in GPP tournaments)
+        raw_mvp = np.power(fppgs[valid_indices] * 1.5, 2.0) * efficiency[valid_indices]
+        s_mvp = np.sum(raw_mvp)
+        p_mvp = raw_mvp / s_mvp if s_mvp > 0 else np.ones(len(valid_indices)) / len(valid_indices)
+
+        min_salary = min(self.config.min_field_salary, int(self.config.salary_cap * 0.88))
+        max_salary = self.config.salary_cap
+
+        rng = np.random.default_rng(self.config.random_seed)
+        batch_size = int(M * 1.5)
+        field_matrix_list: List[np.ndarray] = []
+        collected = 0
+        max_attempts = 100
+        consecutive_empty = 0
+
+        while collected < M:
+            cur_batch = min(batch_size, (M - collected) * 3)
+
+            # Sample 1 MVP
+            mvp_sample = rng.choice(valid_indices, size=cur_batch, p=p_mvp)
+
+            # Sample 4 distinct AnyFLEX players distinct from MVP
+            f1 = rng.choice(valid_indices, size=cur_batch, p=p_flex)
+            while np.any(f1 == mvp_sample):
+                f1[f1 == mvp_sample] = rng.choice(valid_indices, size=np.sum(f1 == mvp_sample), p=p_flex)
+
+            f2 = rng.choice(valid_indices, size=cur_batch, p=p_flex)
+            coll2 = (f2 == mvp_sample) | (f2 == f1)
+            while np.any(coll2):
+                f2[coll2] = rng.choice(valid_indices, size=np.sum(coll2), p=p_flex)
+                coll2 = (f2 == mvp_sample) | (f2 == f1)
+
+            f3 = rng.choice(valid_indices, size=cur_batch, p=p_flex)
+            coll3 = (f3 == mvp_sample) | (f3 == f1) | (f3 == f2)
+            while np.any(coll3):
+                f3[coll3] = rng.choice(valid_indices, size=np.sum(coll3), p=p_flex)
+                coll3 = (f3 == mvp_sample) | (f3 == f1) | (f3 == f2)
+
+            f4 = rng.choice(valid_indices, size=cur_batch, p=p_flex)
+            coll4 = (f4 == mvp_sample) | (f4 == f1) | (f4 == f2) | (f4 == f3)
+            while np.any(coll4):
+                f4[coll4] = rng.choice(valid_indices, size=np.sum(coll4), p=p_flex)
+                coll4 = (f4 == mvp_sample) | (f4 == f1) | (f4 == f2) | (f4 == f3)
+
+            rosters = np.column_stack([mvp_sample, f1, f2, f3, f4])
+
+            # Team diversity check
+            if check_two_teams:
+                first_team = avail_teams[0]
+                r_teams = player_teams[rosters]
+                team1_count = np.sum(r_teams == first_team, axis=1)
+                valid_team_mask = (team1_count >= 1) & (team1_count <= 4)
+            else:
+                valid_team_mask = np.ones(cur_batch, dtype=bool)
+
+            # Salary evaluation
+            roster_salaries = np.sum(salaries[rosters], axis=1)
+            valid_salary_mask = (roster_salaries >= min_salary) & (roster_salaries <= max_salary)
+            valid_mask = valid_team_mask & valid_salary_mask
+            valid_rosters = rosters[valid_mask]
+
+            if len(valid_rosters) > 0:
+                consecutive_empty = 0
+                needed = M - collected
+                take_rosters = valid_rosters[:needed]
+
+                # Convert to weighted row vectors: MVP = 1.5, FLEX = 1.0
+                batch_mat = np.zeros((len(take_rosters), self.P), dtype=np.float32)
+                batch_mat[np.arange(len(take_rosters)), take_rosters[:, 0]] = 1.5
+                for col_slot in range(1, 5):
+                    batch_mat[np.arange(len(take_rosters)), take_rosters[:, col_slot]] = 1.0
+
+                field_matrix_list.append(batch_mat)
+                collected += len(take_rosters)
+            else:
+                consecutive_empty += 1
+                if consecutive_empty >= max_attempts:
+                    raise RuntimeError(
+                        f"Could not sample Single Game field lineups within salary interval "
+                        f"[${min_salary}, ${max_salary}]. Check player pool salaries."
+                    )
+
+        return np.vstack(field_matrix_list)
+
+    def _simulate_classic_field(self) -> np.ndarray:
+        """
+        Simulates tournament field for Classic slates:
+          - 9-player rosters: 1 QB, 2 RB, 3 WR, 1 TE, 1 FLEX, 1 DEF
+          - Encodes into binary NumPy matrix F in {0, 1}^(M x P)
         """
         M = self.config.num_field_lineups
         print()
