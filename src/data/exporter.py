@@ -44,27 +44,43 @@ class FanDuelTemplateExporter:
 
         logger.info("Reading reserved entries template: %s", template_path)
 
+        # Auto-detect whether Single Game (5 roster slots = 9 columns) or Classic (9 roster slots = 13 columns)
+        is_single_game = (
+            self.config.is_single_game
+            or (lineups and any("MVP" in p.lineup_position for p in lineups[0].lineup))
+        )
+        num_cols = 9 if is_single_game else 13
+
         with open(template_path, "r", newline="", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
-            header = next(reader)[:13]
+            header = next(reader)[:num_cols]
             rows = []
             for row in reader:
                 if row and row[0].strip():
-                    rows.append(row[:13])
+                    r_slice = row[:num_cols]
+                    while len(r_slice) < num_cols:
+                        r_slice.append("")
+                    rows.append(r_slice)
                 if len(rows) == self.config.num_selected_lineups:
                     break
 
         df = pd.DataFrame(rows, columns=header)
-        logger.info("Loaded template with pandas: %d reserved entries, %d columns.", len(df), len(df.columns))
+        logger.info(
+            "Loaded template with pandas (%s): %d reserved entries, %d columns.",
+            "Single Game" if is_single_game else "Classic",
+            len(df),
+            len(df.columns),
+        )
 
         if len(df) != len(lineups):
             raise ValueError(f"Row mismatch: Template has {len(df)} rows, but {len(lineups)} lineups selected.")
 
-        # Map lineups into position columns (indices 4 to 12)
+        # Map lineups into position columns (starting at index 4)
         for i, lineup in enumerate(lineups):
             formatted_players = [f"{p.id}:{p.full_name}" for p in lineup.lineup]
             for slot_idx, player_str in enumerate(formatted_players, start=4):
-                df.iat[i, slot_idx] = player_str
+                if slot_idx < num_cols:
+                    df.iat[i, slot_idx] = player_str
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path, index=False)

@@ -79,19 +79,24 @@ pip install -r requirements.txt
 
 ### 2. Running the Optimizer
 
-Place your contest files in the respective directories:
-- Player list in `data/players/`
-- Entries upload template in `data/templates/`
-- (Optional) Weekly projections in `data/projections/`
+Contest slates are organized into self-contained directories under `data/week-05/<slate>/ (or data/week-<XX>/<slate>/)`:
+- `players.csv` (or vendor player list)
+- `entries_template.csv` (FanDuel / DraftKings upload template)
+- `projections.csv` (External forward-looking projections)
 
-Then launch:
+Then launch by specifying the target slate:
 ```bash
-./run_optimizer
-# Or run with custom CLI parameters:
-python run_optimizer.py --entry-fee 0.05 --num-candidates 500 --num-trials 5000
+# Run for a specific slate (e.g. Sunday Night Showdown)
+python src/build_fanduel_lineups.py --week 5 --slate sunday-night
+
+# Run for Main Slate
+python src/build_fanduel_lineups.py --week 5 --slate main-slate
+
+# Or run with custom simulation parameters:
+python src/build_fanduel_lineups.py --week 5 --slate sunday-night --entry-fee 0.05 --num-candidates 500 --num-trials 5000
 ```
 
-The completed upload CSV will be written to `data/output/Completed-[template-name].csv`.
+The completed upload CSV will be written to `data/week-05/<slate>/ (or data/week-<XX>/<slate>/)completed_lineups.csv`.
 
 ## Running Automated Tests
 

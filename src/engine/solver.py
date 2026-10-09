@@ -20,7 +20,6 @@ from pydfs_lineup_optimizer import (
     Player,
     PositionsStack,
     RandomFantasyPointsStrategy,
-    Site,
     Sport,
     get_optimizer,
 )
@@ -40,7 +39,7 @@ class CandidatePoolGenerator:
     def __init__(self, optimizer: LineupOptimizer, config: SimOptimizerConfig) -> None:
         self.optimizer = optimizer
         self.config = config
-        self.players: List[Player] = list(optimizer.player_pool.all_players)
+        self.players: List[Player] = list(optimizer.player_pool.filtered_players)
         self.player_to_idx: Dict[str, int] = {str(p.id): idx for idx, p in enumerate(self.players)}
 
     def generate_candidate_pool(self) -> Tuple[List[Lineup], np.ndarray]:
@@ -69,51 +68,74 @@ class CandidatePoolGenerator:
             (1 - ratio) * 100,
         )
 
+        total_slots = self.optimizer.settings.get_total_players()
+        is_single_game = total_slots < 9
+        max_rep = min(self.config.max_repeating_players, total_slots - 1)
+        site = self.optimizer.settings.site
+
         # Baseline constraints for candidates
-        self.optimizer.set_max_repeating_players(self.config.max_repeating_players)
+        self.optimizer.set_max_repeating_players(max_rep)
         self.optimizer.set_fantasy_points_strategy(
             RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
         )
-        self.optimizer.restrict_positions_for_opposing_team(["D"], ["QB", "RB", "WR", "TE"])
+        if not is_single_game:
+            self.optimizer.restrict_positions_for_opposing_team(["D"], ["QB", "RB", "WR", "TE"])
         if len(self.optimizer.player_pool.available_teams) >= 3:
             self.optimizer.set_total_teams(min_teams=3)
+        elif len(self.optimizer.player_pool.available_teams) == 2:
+            self.optimizer.set_total_teams(min_teams=2)
+
         self.optimizer.settings.max_from_one_team = 4
         self.optimizer.settings.budget = self.config.salary_cap
-        # Ensure diversity across candidates by setting max 35% exposure during candidate phase
-        for p in self.optimizer.player_pool.all_players:
-            p.max_exposure = 0.35
+        # Ensure diversity across candidates by setting max exposure during candidate phase
+        num_teams = len(self.optimizer.player_pool.available_teams)
+        if is_single_game:
+            cand_max_exp = 0.65
+        elif num_teams <= 4:
+            cand_max_exp = 0.60
+        else:
+            cand_max_exp = 0.35
+
+        for p in self.optimizer.player_pool.filtered_players:
+            p.max_exposure = cand_max_exp if p.fppg > 0.0 else 0.0
 
         # Phase 1: Primary Stacked Lineups
-        logger.info("Solving %d primary stacked candidate lineups (QB + same-team WR/TE)...", n_stacked)
-        self.optimizer.add_stack(PositionsStack(["QB", ("WR", "TE")]))
+        if not is_single_game:
+            logger.info("Solving %d primary stacked candidate lineups (QB + same-team WR/TE)...", n_stacked)
+            self.optimizer.add_stack(PositionsStack(["QB", ("WR", "TE")]))
+        else:
+            logger.info("Solving %d candidate lineups for Single Game slate...", n_stacked)
 
         candidates: List[Lineup] = []
         t0 = time.time()
         for i, lineup in enumerate(self.optimizer.optimize(n=n_stacked), start=1):
             candidates.append(lineup)
             if i % 100 == 0 or i == n_stacked:
-                logger.info("... Solved %d / %d stacked candidate lineups (%.1fs) ...", i, n_stacked, time.time() - t0)
+                logger.info("... Solved %d / %d candidate lineups (%.1fs) ...", i, n_stacked, time.time() - t0)
 
         # Phase 2: Unconstrained Lineups
         if n_unconstrained > 0:
-            logger.info("Solving %d unconstrained candidate lineups (standalone rushing QB ceiling)...", n_unconstrained)
-            opt_unconstrained = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+            logger.info("Solving %d unconstrained candidate lineups...", n_unconstrained)
+            opt_unconstrained = get_optimizer(site, Sport.FOOTBALL)
             opt_unconstrained.player_pool.load_players(self.players)
             opt_unconstrained.player_pool.with_injured = True
-            opt_unconstrained.set_max_repeating_players(self.config.max_repeating_players)
+            opt_unconstrained.set_max_repeating_players(max_rep)
             opt_unconstrained.set_fantasy_points_strategy(
                 RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
             )
-            opt_unconstrained.restrict_positions_for_opposing_team(["D"], ["QB", "RB", "WR", "TE"])
+            if not is_single_game:
+                opt_unconstrained.restrict_positions_for_opposing_team(["D"], ["QB", "RB", "WR", "TE"])
             if len(opt_unconstrained.player_pool.available_teams) >= 3:
                 opt_unconstrained.set_total_teams(min_teams=3)
+            elif len(opt_unconstrained.player_pool.available_teams) == 2:
+                opt_unconstrained.set_total_teams(min_teams=2)
+
             opt_unconstrained.settings.max_from_one_team = 4
             opt_unconstrained.settings.budget = self.config.salary_cap
-            for p in opt_unconstrained.player_pool.all_players:
-                p.max_exposure = 0.35
+            for p in opt_unconstrained.player_pool.filtered_players:
+                p.max_exposure = cand_max_exp if p.fppg > 0.0 else 0.0
 
             accepted_sets = [set(p.id for p in c.lineup) for c in candidates]
-            max_rep = self.config.max_repeating_players
 
             t1 = time.time()
             solved_unconstrained = 0

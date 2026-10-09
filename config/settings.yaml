@@ -27,7 +27,9 @@ fanduel:
     max_repeating_players: 6
     randomness_deviation: 0.25
     exclude_out_injured: true
+    zero_unprojected: true
     strict_exposure_caps: false
+    zero_unprojected: true
 
 draftkings:
   salary_cap: 50000
@@ -46,3 +48,4 @@ draftkings:
     max_repeating_players: 6
     randomness_deviation: 0.25
     exclude_out_injured: true
+    zero_unprojected: true
