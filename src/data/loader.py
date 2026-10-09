@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Set, Union
+from typing import Optional, Union
 
 import pandas as pd
 from pydfs_lineup_optimizer import (
@@ -158,38 +158,6 @@ class FanDuelDataLoader:
     and executes pre-solve sanitization (injury pruning & backup QB zeroing).
     """
 
-    NON_STARTING_BACKUP_QBS: Set[str] = {
-        "Case Keenum",
-        "Drew Lock",
-        "Josh Johnson",
-        "Carson Wentz",
-        "Jameis Winston",
-        "Shane Buechele",
-        "Joe Milton III",
-        "Tommy DeVito",
-        "Max Brosmer",
-        "Stetson Bennett IV",
-        "Sean Clifford",
-        "Davis Mills",
-        "Tanner McKee",
-        "Quinn Ewers",
-        "Garrett Nussmeier",
-        "Jarrett Stidham",
-        "Fernando Mendoza",
-        "Tyrod Taylor",
-        "Kyle McCord",
-        "Sam Howell",
-        "Trey Lance",
-        "Behren Morton",
-        "J.J. McCarthy",
-        "Gardner Minshew II",
-        "Sam Ehlinger",
-        "Tyler Huntley",
-        "Cade Klubnik",
-        "Justin Fields",
-        "Kedon Slovis",
-    }
-
     def __init__(self, config: SimOptimizerConfig) -> None:
         self.config = config
 
@@ -278,13 +246,21 @@ class FanDuelDataLoader:
     def _filter_backup_quarterbacks(self, optimizer: LineupOptimizer) -> None:
         """
         Pre-solve filter: Zeroes out projected points / FPPG for non-starting backup
-        quarterbacks (specifically Case Keenum, Drew Lock, etc.) so only active starters
-        are eligible for selection.
+        quarterbacks configured in settings.yaml so only active starters are eligible for selection.
         """
+        backup_qbs = set(self.config.backup_quarterbacks or ())
+        if not backup_qbs:
+            return
+
+        zeroed_count = 0
         for player in optimizer.player_pool.all_players:
-            if "QB" in player.positions:
-                if player.full_name in self.NON_STARTING_BACKUP_QBS or player.full_name == "Case Keenum":
+            if "QB" in player.positions and player.full_name in backup_qbs:
+                if player.fppg > 0:
                     player.fppg = 0.0
+                    zeroed_count += 1
+
+        if zeroed_count > 0:
+            logger.info("Pre-solve filter: Zeroed out projected FPPG for %d non-starting backup QBs.", zeroed_count)
 
     def _apply_external_projections(self, optimizer: LineupOptimizer, proj_path: Path) -> None:
         """Applies weekly forward-looking projections to the player pool (SaberSim zero_unprojected standard)."""

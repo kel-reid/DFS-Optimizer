@@ -45,7 +45,7 @@ import math
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 from pydfs_lineup_optimizer import (
@@ -98,17 +98,32 @@ class DKOptimizerConfig:
     stack_ratio: float = 0.80        # 80% primary stacked (120 lineups) / 20% unconstrained (30 lineups)
     id_format: str = "name_id"       # "name_id" ("Josh Allen (123456)") or "id_only" ("123456")
     exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
+    backup_quarterbacks: Optional[Tuple[str, ...]] = None
+
+    def __post_init__(self) -> None:
+        if self.backup_quarterbacks is None:
+            cfg_dict = load_yaml_settings()
+            global_cfg = cfg_dict.get("global", {})
+            dk_cfg = cfg_dict.get("draftkings", {})
+            b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
+            self.backup_quarterbacks = tuple(b_qbs) if b_qbs else ()
 
     @classmethod
     def from_settings(cls, settings_path: Optional[Path] = None, **overrides: Any) -> DKOptimizerConfig:
         """Constructs DKOptimizerConfig merging config/settings.yaml, environment variables, and kwargs."""
         cfg_dict = load_yaml_settings(settings_path)
+        global_cfg = cfg_dict.get("global", {})
         dk_cfg = cfg_dict.get("draftkings", {})
         sim_cfg = dk_cfg.get("simulation", {})
         exp_cfg = dk_cfg.get("exposure_caps", {})
         solver_cfg = dk_cfg.get("solver", {})
 
         params: Dict[str, Any] = {}
+
+        b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
+        if b_qbs:
+            params["backup_quarterbacks"] = tuple(b_qbs)
+
         if "salary_cap" in dk_cfg:
             params["salary_cap"] = int(dk_cfg["salary_cap"])
         if "num_lineups" in sim_cfg:
@@ -125,12 +140,14 @@ class DKOptimizerConfig:
         if "exclude_out_injured" in solver_cfg:
             params["exclude_out_injured"] = bool(solver_cfg["exclude_out_injured"])
 
-        env_map = {
+        env_map: Dict[str, Tuple[str, Any]] = {
             "DFS_DK_SALARY_CAP": ("salary_cap", int),
             "DFS_DK_NUM_LINEUPS": ("num_lineups", int),
             "DFS_DK_STACK_RATIO": ("stack_ratio", float),
             "DFS_DK_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_DK_RANDOMNESS": ("randomness_deviation", float),
+            "DFS_DK_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
+            "DFS_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
         }
         import os
         for env_var, (attr, cast) in env_map.items():
@@ -195,15 +212,6 @@ def find_dk_template_csv(explicit_path: Optional[Path]) -> Path:
 class DraftKingsDataLoader:
     """Ingests official DraftKings player pool CSV directly into optimizer."""
 
-    NON_STARTING_BACKUP_QBS: Set[str] = {
-        "Case Keenum", "Drew Lock", "Josh Johnson", "Carson Wentz",
-        "Jameis Winston", "Shane Buechele", "Joe Milton III", "Tommy DeVito",
-        "Max Brosmer", "Stetson Bennett IV", "Sean Clifford", "Davis Mills",
-        "Tanner McKee", "Jarrett Stidham", "Tyrod Taylor", "Sam Howell",
-        "Trey Lance", "Gardner Minshew II", "Sam Ehlinger", "Tyler Huntley",
-        "Justin Fields", "Mac Jones", "Nick Mullens", "Andy Dalton", "Easton Stick"
-    }
-
     def __init__(self, config: DKOptimizerConfig) -> None:
         self.config = config
 
@@ -226,15 +234,17 @@ class DraftKingsDataLoader:
             self._prune_inactive_players(optimizer, csv_path)
 
         # Filter backup QBs
+        backup_qbs = set(self.config.backup_quarterbacks or ())
         zeroed_count = 0
-        for p in optimizer.player_pool.all_players:
-            if "QB" in p.positions and (p.full_name in self.NON_STARTING_BACKUP_QBS or "Keenum" in p.full_name):
-                if p.fppg > 0:
-                    p.fppg = 0.0
-                    zeroed_count += 1
+        if backup_qbs:
+            for p in optimizer.player_pool.all_players:
+                if "QB" in p.positions and p.full_name in backup_qbs:
+                    if p.fppg > 0:
+                        p.fppg = 0.0
+                        zeroed_count += 1
 
-        if zeroed_count > 0:
-            logger.info("Pre-solve filter: Zeroed out projected FPPG for %d non-starting backup QBs.", zeroed_count)
+            if zeroed_count > 0:
+                logger.info("Pre-solve filter: Zeroed out projected FPPG for %d non-starting backup QBs.", zeroed_count)
 
         return optimizer
 
