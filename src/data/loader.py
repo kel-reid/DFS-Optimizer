@@ -199,6 +199,7 @@ class FanDuelDataLoader:
             raise FileNotFoundError(f"Player pool CSV not found: {csv_path.resolve()}")
 
         is_single_game = self._detect_single_game(csv_path)
+        self.config.is_single_game = is_single_game
         site = Site.FANDUEL_SINGLE_GAME if is_single_game else Site.FANDUEL
 
         optimizer = get_optimizer(site, Sport.FOOTBALL)

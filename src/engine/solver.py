@@ -139,7 +139,8 @@ class CandidatePoolGenerator:
 
             t1 = time.time()
             solved_unconstrained = 0
-            for lineup in opt_unconstrained.optimize(n=n_unconstrained * 2):
+            search_n = max(50, n_unconstrained * 5)
+            for lineup in opt_unconstrained.optimize(n=search_n):
                 l_set = set(p.id for p in lineup.lineup)
                 if any(len(l_set & prev_set) > max_rep for prev_set in accepted_sets):
                     continue
@@ -158,7 +159,7 @@ class CandidatePoolGenerator:
 
         logger.info("Successfully generated %d candidate lineups. Building binary matrix...", len(candidates))
 
-        # Encode candidates into binary NumPy matrix C in {0, 1}^(N x P)
+        # Encode candidates into binary/weighted NumPy matrix C in {0, 1, 1.5}^(N x P)
         P = len(self.players)
         candidates_matrix = np.zeros((len(candidates), P), dtype=np.float32)
 
@@ -166,6 +167,7 @@ class CandidatePoolGenerator:
             for player in lineup.lineup:
                 col_idx = self.player_to_idx.get(str(player.id))
                 if col_idx is not None:
-                    candidates_matrix[row_idx, col_idx] = 1.0
+                    is_mvp = is_single_game and "MVP" in (getattr(player, "lineup_position", "") or "")
+                    candidates_matrix[row_idx, col_idx] = 1.5 if is_mvp else 1.0
 
         return candidates, candidates_matrix

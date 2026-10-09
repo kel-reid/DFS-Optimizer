@@ -57,16 +57,23 @@ class PortfolioSelector:
         def get_cap(player: Player) -> int:
             pos = set(player.positions)
             if "D" in pos:
-                return math.floor(K * self.config.max_def_exposure)
+                cap_rate = self.config.max_def_exposure
             elif "QB" in pos:
-                return math.floor(K * self.config.max_qb_exposure)
+                cap_rate = self.config.max_qb_exposure
             elif "RB" in pos:
-                return math.floor(K * self.config.max_rb_exposure)
+                cap_rate = self.config.max_rb_exposure
             elif "WR" in pos:
-                return math.floor(K * self.config.max_wr_exposure)
+                cap_rate = self.config.max_wr_exposure
             elif "TE" in pos:
-                return math.floor(K * self.config.max_te_exposure)
-            return math.floor(K * self.config.max_exposure)
+                cap_rate = self.config.max_te_exposure
+            else:
+                cap_rate = self.config.max_exposure
+
+            # For Single Game slates, scale caps appropriately if using classic default (0.25)
+            if getattr(self.config, "is_single_game", False) and cap_rate <= 0.25:
+                cap_rate = 0.65
+
+            return max(1, math.floor(K * cap_rate))
 
         selected: List[Lineup] = []
         player_usage: Counter[str] = Counter()
@@ -187,16 +194,22 @@ class SimAuditReporter:
         def get_pos_cap(p: Player) -> int:
             pos = set(p.positions)
             if "D" in pos:
-                return math.floor(total * config.max_def_exposure)
+                cap_rate = config.max_def_exposure
             elif "QB" in pos:
-                return math.floor(total * config.max_qb_exposure)
+                cap_rate = config.max_qb_exposure
             elif "RB" in pos:
-                return math.floor(total * config.max_rb_exposure)
+                cap_rate = config.max_rb_exposure
             elif "WR" in pos:
-                return math.floor(total * config.max_wr_exposure)
+                cap_rate = config.max_wr_exposure
             elif "TE" in pos:
-                return math.floor(total * config.max_te_exposure)
-            return math.floor(total * config.max_exposure)
+                cap_rate = config.max_te_exposure
+            else:
+                cap_rate = config.max_exposure
+
+            if getattr(config, "is_single_game", False) and cap_rate <= 0.25:
+                cap_rate = 0.65
+
+            return max(1, math.floor(total * cap_rate))
 
         cap_violations = []
         for name, count in player_counts.items():
