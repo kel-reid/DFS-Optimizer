@@ -39,6 +39,15 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 pythonpath = ["."]
 
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+
 [tool.pyright]
 include = ["src", "tests", "scripts", "run_optimizer.py", "run.py", "build_fanduel_lineups.py"]
 venvPath = "."
