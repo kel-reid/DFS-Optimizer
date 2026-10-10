@@ -58,3 +58,10 @@ data/*.csv
 data/output/*
 !data/**/.gitkeep
 uv.lock
+
+# Test & coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/

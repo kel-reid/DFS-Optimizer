@@ -1,7 +1,7 @@
 # NFL DFS Optimization Engine
 
 [![CI](https://github.com/kel-reid/DFS-Optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/kel-reid/DFS-Optimizer/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/kel-reid/DFS-Optimizer/branch/main/graph/badge.svg)](https://codecov.io/gh/kel-reid/DFS-Optimizer)
+[![codecov](https://codecov.io/github/kel-reid/DFS-Optimizer/graph/badge.svg?token=MqqRz9cfSP)](https://codecov.io/github/kel-reid/DFS-Optimizer)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
 A quantitative optimization and Monte Carlo simulation engine for generating high-equity tournament portfolios for FanDuel and DraftKings NFL DFS contests.
