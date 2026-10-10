@@ -105,36 +105,43 @@ def find_dk_players_csv(
     if explicit_path and explicit_path.exists():
         return explicit_path
 
+    from src.data.loader import normalize_week
+    norm_week = normalize_week(week)
+
     if slate:
         from src.data.loader import _find_in_slate_dirs
         patterns = ["*DKSalaries*.csv", "*salaries*.csv", "DKSalaries.csv", "*player*.csv"]
-        found = _find_in_slate_dirs(slate, patterns, week, slate_date, "players")
+        found = _find_in_slate_dirs(slate, patterns, norm_week, slate_date, "players")
         if found:
             return found
 
-    candidates = [
-        Path("data/players/DKSalaries.csv"),
-        Path("data/DKSalaries.csv"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
+    # Only fall back to generic candidates if neither specific week nor slate_date was given
+    if not norm_week and not slate_date:
+        candidates = [
+            Path("data/players/DKSalaries.csv"),
+            Path("data/DKSalaries.csv"),
+        ]
+        for c in candidates:
+            if c.exists():
+                return c
 
-    matches = [
-        p for p in Path("data").glob("**/*DKSalaries*.csv")
-        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
-    ]
-    if matches:
-        return matches[0]
+        matches = [
+            p for p in sorted(Path("data").glob("**/*DKSalaries*.csv"))
+            if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+        ]
+        if matches:
+            return matches[0]
 
-    matches_gen = [
-        p for p in Path("data").glob("**/*salaries*.csv")
-        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
-    ]
-    if matches_gen:
-        return matches_gen[0]
+        matches_gen = [
+            p for p in sorted(Path("data").glob("**/*salaries*.csv"))
+            if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+        ]
+        if matches_gen:
+            return matches_gen[0]
 
-    return Path("data/players/DKSalaries.csv")
+    raise FileNotFoundError(
+        f"Could not locate DraftKings players/salaries CSV (slate='{slate}', week='{week}', date='{slate_date}')."
+    )
 
 
 def find_dk_template_csv(
@@ -147,29 +154,36 @@ def find_dk_template_csv(
     if explicit_path and explicit_path.exists():
         return explicit_path
 
+    from src.data.loader import normalize_week
+    norm_week = normalize_week(week)
+
     if slate:
         from src.data.loader import _find_in_slate_dirs
         patterns = ["*DKEntries*.csv", "*entries*.csv", "DKEntries.csv", "*template*.csv"]
-        found = _find_in_slate_dirs(slate, patterns, week, slate_date, "templates")
+        found = _find_in_slate_dirs(slate, patterns, norm_week, slate_date, "templates")
         if found:
             return found
 
-    candidates = [
-        Path("data/templates/DKEntries.csv"),
-        Path("data/DKEntries.csv"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
+    # Only fall back to generic candidates if neither specific week nor slate_date was given
+    if not norm_week and not slate_date:
+        candidates = [
+            Path("data/templates/DKEntries.csv"),
+            Path("data/DKEntries.csv"),
+        ]
+        for c in candidates:
+            if c.exists():
+                return c
 
-    matches = [
-        p for p in Path("data").glob("**/*DKEntries*.csv")
-        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
-    ]
-    if matches:
-        return matches[0]
+        matches = [
+            p for p in sorted(Path("data").glob("**/*DKEntries*.csv"))
+            if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+        ]
+        if matches:
+            return matches[0]
 
-    return Path("data/templates/DKEntries.csv")
+    raise FileNotFoundError(
+        f"Could not locate DraftKings entries template CSV (slate='{slate}', week='{week}', date='{slate_date}')."
+    )
 
 
 # -----------------------------------------------------------------------------

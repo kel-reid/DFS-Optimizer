@@ -151,7 +151,17 @@ def test_resolve_site_no_cross_week_leakage(tmp_path: Path, monkeypatch: pytest.
     assert resolve_site(slate="main-slate", week=10) == "draftkings"
 
 
+def test_resolve_site_with_slate_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    # DraftKings date-based slate
+    date_dir = tmp_path / "data" / "2026-10-15" / "thursday-night"
+    date_dir.mkdir(parents=True)
+    (date_dir / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+    assert resolve_site(slate="thursday-night", slate_date="2026-10-15") == "draftkings"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
 
 

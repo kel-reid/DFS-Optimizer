@@ -108,6 +108,28 @@ def test_apply_forward_projections_draftkings_dst(tmp_path: Path):
     assert player_dict.get("Chiefs") == 0.0
 
 
+def test_find_projections_csv_no_cross_week_leakage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that requesting week 7 projections does not fall back to week 5 files, and handles slate_date."""
+    monkeypatch.chdir(tmp_path)
+    # Week 5 has a projections file
+    w5_dir = tmp_path / "data" / "week-05" / "main-slate"
+    w5_dir.mkdir(parents=True)
+    (w5_dir / "projections.csv").write_text("player,fantasy\n")
+
+    # Requesting week 7 when week 7 has no projections must return None, NOT week 5
+    res = find_projections_csv(slate="main-slate", week=7)
+    assert res is None
+
+    # Date-based discovery
+    date_dir = tmp_path / "data" / "2026-10-11" / "main-slate"
+    date_dir.mkdir(parents=True)
+    date_proj = date_dir / "projections.csv"
+    date_proj.write_text("player,fantasy\n")
+    res_date = find_projections_csv(slate="main-slate", slate_date="2026-10-11")
+    assert res_date == Path("data/2026-10-11/main-slate/projections.csv")
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
 
