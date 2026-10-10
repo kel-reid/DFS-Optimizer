@@ -10,7 +10,6 @@ A quantitative optimization and Monte Carlo simulation engine for generating hig
 > * **MME (Mass Multi-Entry)**: Generating a coordinated portfolio of 150 lineups to capture ceiling outcomes in 150-max contests.
 > * **GPP (Guaranteed Prize Pool)**: Large-field, top-heavy tournament payout structures where high percentiles (top 0.01%–1.0%) capture the majority of prize equity.
 
----
 
 ## Architecture: 4-Stage Monte Carlo Simulation Pipeline
 
@@ -43,7 +42,6 @@ flowchart TD
     D3 --> E["Contest Template Exporter<br/>(FanDuel / DraftKings Upload CSV)"]
 ```
 
----
 
 ## Simulation Dimensions: N = 500, M = 10,000, T = 5,000, K = 150
 
@@ -58,7 +56,6 @@ The Monte Carlo simulation pipeline parameterizes scale across four distinct mat
 * **K = 150 Portfolio Lineups (`--num-lineups`)**:
   * The target entry portfolio size exported to the contest template (standard FanDuel/DraftKings 150-max MME contests).
 
----
 
 ## Strategic & Quantitative Constraints
 
@@ -105,7 +102,6 @@ The Monte Carlo simulation pipeline parameterizes scale across four distinct mat
      * Supports environment variable overrides (`DFS_ENTRY_FEE`, `DFS_DK_ENTRY_FEE`) and CLI `--entry-fee` flag.
      * Defaults to a neutral **$1.00** baseline if unstated, allowing seamless scaling across any buy-in tier ($0.05 micro-stakes to $100+ high-stakes).
 
----
 
 ## Configuration Architecture (`config/settings.yaml`)
 
@@ -143,7 +139,6 @@ draftkings:
 
 Supported configuration parameters can be overridden via environment variables (e.g. `DFS_SALARY_CAP`, `DFS_MIN_FIELD_SALARY`, `DFS_ENTRY_FEE`, `DFS_NUM_CANDIDATES`, `DFS_NUM_FIELD`, `DFS_NUM_TRIALS`, `DFS_NUM_LINEUPS`, `DFS_MAX_QB_EXPOSURE`, `DFS_MAX_DEF_EXPOSURE`, `DFS_BACKUP_QUARTERBACKS`, and corresponding `DFS_DK_*` variables).
 
----
 
 ## Setup & Execution
 
@@ -218,7 +213,6 @@ python src/build_draftkings_lineups.py \
 ```
 *Export destination: `data/output/Completed-DKEntries.csv`.*
 
----
 
 ## Quality Verification & Tests
 
