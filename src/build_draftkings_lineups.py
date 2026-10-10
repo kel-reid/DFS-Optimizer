@@ -95,10 +95,22 @@ logger = logging.getLogger("DraftKingsMMEOptimizer")
 # -----------------------------------------------------------------------------
 # File Path Auto-Discovery
 # -----------------------------------------------------------------------------
-def find_dk_players_csv(explicit_path: Optional[Path]) -> Path:
-    """Resolves the official DraftKings player pool CSV."""
+def find_dk_players_csv(
+    explicit_path: Optional[Path] = None,
+    slate: Optional[str] = None,
+    week: Optional[Union[str, int]] = None,
+    slate_date: Optional[str] = None,
+) -> Path:
+    """Resolves the official DraftKings player pool CSV from explicit path, slate folder, or legacy locations."""
     if explicit_path and explicit_path.exists():
         return explicit_path
+
+    if slate:
+        from src.data.loader import _find_in_slate_dirs
+        patterns = ["*DKSalaries*.csv", "*salaries*.csv", "DKSalaries.csv", "*player*.csv", "*.csv"]
+        found = _find_in_slate_dirs(slate, patterns, week, slate_date, "players")
+        if found:
+            return found
 
     candidates = [
         Path("data/players/DKSalaries.csv"),
@@ -119,10 +131,22 @@ def find_dk_players_csv(explicit_path: Optional[Path]) -> Path:
     return Path("data/players/DKSalaries.csv")
 
 
-def find_dk_template_csv(explicit_path: Optional[Path]) -> Path:
-    """Resolves the DraftKings entries upload template CSV."""
+def find_dk_template_csv(
+    explicit_path: Optional[Path] = None,
+    slate: Optional[str] = None,
+    week: Optional[Union[str, int]] = None,
+    slate_date: Optional[str] = None,
+) -> Path:
+    """Resolves the DraftKings entries upload template CSV from explicit path, slate folder, or legacy locations."""
     if explicit_path and explicit_path.exists():
         return explicit_path
+
+    if slate:
+        from src.data.loader import _find_in_slate_dirs
+        patterns = ["*DKEntries*.csv", "*entries*.csv", "DKEntries.csv", "*template*.csv"]
+        found = _find_in_slate_dirs(slate, patterns, week, slate_date, "templates")
+        if found:
+            return found
 
     candidates = [
         Path("data/templates/DKEntries.csv"),
@@ -592,16 +616,43 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     parser.add_argument("--max-repeating", type=int, default=default_cfg.max_repeating_players)
     parser.add_argument("--keep-injured", action="store_true", help="Keep injured/questionable/out players in player pool")
     parser.add_argument("--strict-caps", action="store_true", default=default_cfg.strict_exposure_caps)
+    parser.add_argument("--slate", type=str, default=default_cfg.slate, help="Target slate identifier (e.g. main-slate, sunday-night).")
+    parser.add_argument("--week", type=str, default=default_cfg.week, help="NFL Week (e.g. 5, 05, week-05).")
+    parser.add_argument("--date", type=str, default=default_cfg.slate_date, help="Slate date in YYYY-MM-DD format (e.g. 2026-10-04).")
     parser.add_argument("--zero-unprojected", action="store_true", default=default_cfg.zero_unprojected)
     parser.add_argument("--keep-unprojected", action="store_true", default=False)
 
     args = parser.parse_args()
 
-    players_path = find_dk_players_csv(args.players_csv)
-    template_path = find_dk_template_csv(args.template_csv)
+    from src.data.loader import normalize_week
+    norm_week = normalize_week(args.week)
+
+    players_path = find_dk_players_csv(args.players_csv, slate=args.slate, week=norm_week, slate_date=args.date)
+    template_path = find_dk_template_csv(args.template_csv, slate=args.slate, week=norm_week, slate_date=args.date)
+
+    if args.projections_csv:
+        projections_path = args.projections_csv
+    elif args.slate:
+        from src.data.projections import find_projections_csv
+        projections_path = find_projections_csv(slate=args.slate, week=norm_week, slate_date=args.date)
+    else:
+        projections_path = None
 
     if args.output_csv:
         output_path = args.output_csv
+    elif args.slate:
+        w_str = norm_week or "week-05"
+        slate_dir = Path(f"data/{w_str}/{args.slate}")
+        if not slate_dir.is_dir() and args.date:
+            date_dir = Path(f"data/{args.date}/{args.slate}")
+            if date_dir.is_dir():
+                slate_dir = date_dir
+        if slate_dir.is_dir():
+            output_path = slate_dir / "completed_lineups.csv"
+        else:
+            output_dir = Path(f"data/output/{args.slate}")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"Completed-{template_path.name}"
     else:
         output_dir = Path("data/output")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -614,7 +665,10 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         players_csv=players_path,
         template_csv=template_path,
         output_csv=output_path,
-        projections_csv=args.projections_csv,
+        projections_csv=projections_path,
+        slate=args.slate,
+        week=norm_week,
+        slate_date=args.date,
         num_candidates=args.num_candidates,
         num_field_lineups=args.num_field,
         num_sim_trials=args.num_trials,

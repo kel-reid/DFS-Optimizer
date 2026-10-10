@@ -104,5 +104,32 @@ def test_resolve_site_workspace_fallback():
     assert site in ("fanduel", "draftkings")
 
 
+def test_resolve_site_with_slate_and_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    # DraftKings slate
+    dk_slate = tmp_path / "data" / "week-09" / "main-slate"
+    dk_slate.mkdir(parents=True)
+    (dk_slate / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+    assert resolve_site(slate="main-slate", week=9) == "draftkings"
+
+    # FanDuel slate
+    fd_slate = tmp_path / "data" / "week-09" / "sunday-night"
+    fd_slate.mkdir(parents=True)
+    (fd_slate / "players.csv").write_text("Id,Position,FPPG,Nickname\n")
+    assert resolve_site(slate="sunday-night", week="09") == "fanduel"
+
+
+def test_resolve_site_ambiguous_in_slate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    mixed_slate = tmp_path / "data" / "week-10" / "main-slate"
+    mixed_slate.mkdir(parents=True)
+    (mixed_slate / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+    (mixed_slate / "FanDuel-NFL-players-list.csv").write_text("Id,Position,FPPG,Nickname\n")
+
+    with pytest.raises(ValueError, match="Ambiguous slate files detected"):
+        resolve_site(slate="main-slate", week=10)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+

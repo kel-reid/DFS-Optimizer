@@ -467,6 +467,14 @@ class DraftKingsConfig(BaseOptimizerConfig):
             "DFS_DK_MAX_DEF_EXPOSURE": ("max_def_exposure", float),
             "DFS_MAX_EXPOSURE": ("max_exposure", float),
             "DFS_DK_MAX_EXPOSURE": ("max_exposure", float),
+            "DFS_SLATE": ("slate", str),
+            "DFS_DK_SLATE": ("slate", str),
+            "DFS_WEEK": ("week", str),
+            "DFS_DK_WEEK": ("week", str),
+            "DFS_SLATE_DATE": ("slate_date", str),
+            "DFS_DK_SLATE_DATE": ("slate_date", str),
+            "DFS_IS_SINGLE_GAME": ("is_single_game", lambda v: str(v).lower() in ("1", "true", "yes")),
+            "DFS_DK_IS_SINGLE_GAME": ("is_single_game", lambda v: str(v).lower() in ("1", "true", "yes")),
             "DFS_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
             "DFS_DK_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
             "DFS_RANDOM_SEED": ("random_seed", int),
@@ -503,6 +511,51 @@ class DraftKingsConfig(BaseOptimizerConfig):
         if "week" in params and params["week"] is not None:
             from src.data.loader import normalize_week
             params["week"] = normalize_week(params["week"])
+
+        # Auto-discover slate-specific paths if slate is provided and explicit paths are missing
+        slate = params.get("slate")
+        week = params.get("week")
+        slate_date = params.get("slate_date")
+        if slate:
+            from src.build_draftkings_lineups import find_dk_players_csv, find_dk_template_csv
+            from src.data.loader import normalize_week
+            from src.data.projections import find_projections_csv
+
+            norm_week = normalize_week(week)
+            if "players_csv" not in normalized_overrides or params.get("players_csv") is None:
+                try:
+                    params["players_csv"] = find_dk_players_csv(slate=slate, week=norm_week, slate_date=slate_date)
+                except Exception:
+                    pass
+            if "template_csv" not in normalized_overrides or params.get("template_csv") is None:
+                try:
+                    params["template_csv"] = find_dk_template_csv(slate=slate, week=norm_week, slate_date=slate_date)
+                    if "entry_fee" not in normalized_overrides and "DFS_DK_ENTRY_FEE" not in os.environ and "DFS_ENTRY_FEE" not in os.environ:
+                        detected_fee = detect_entry_fee(params.get("template_csv"))
+                        if detected_fee is not None:
+                            params["entry_fee"] = detected_fee
+                except Exception:
+                    pass
+            if "projections_csv" not in normalized_overrides or params.get("projections_csv") is None:
+                try:
+                    params["projections_csv"] = find_projections_csv(slate=slate, week=norm_week, slate_date=slate_date)
+                except Exception:
+                    pass
+            if "output_csv" not in normalized_overrides or params.get("output_csv") is None:
+                w_str = norm_week or "week-05"
+                slate_dir = Path(f"data/{w_str}/{slate}")
+                if not slate_dir.is_dir() and slate_date:
+                    date_dir = Path(f"data/{slate_date}/{slate}")
+                    if date_dir.is_dir():
+                        slate_dir = date_dir
+                if slate_dir.is_dir():
+                    params["output_csv"] = slate_dir / "completed_lineups.csv"
+                else:
+                    out_d = Path(f"data/output/{slate}")
+                    out_d.mkdir(parents=True, exist_ok=True)
+                    tmpl_p = params.get("template_csv")
+                    tmpl_name = tmpl_p.name if tmpl_p else "DKEntries.csv"
+                    params["output_csv"] = out_d / f"Completed-{tmpl_name}"
 
         return cls(**params)
 
