@@ -125,9 +125,10 @@ def resolve_site(
             candidate_slate_dirs.append(Path(f"data/{norm_w}/{slate}"))
         if slate_date:
             candidate_slate_dirs.append(Path(f"data/{slate_date}/{slate}"))
-        for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-            if p not in candidate_slate_dirs:
-                candidate_slate_dirs.append(p)
+        if not norm_w and not slate_date:
+            for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
+                if p not in candidate_slate_dirs:
+                    candidate_slate_dirs.append(p)
         candidate_slate_dirs.append(Path(f"data/{slate}"))
 
         for s_dir in candidate_slate_dirs:

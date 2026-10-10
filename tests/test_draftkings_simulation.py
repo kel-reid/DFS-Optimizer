@@ -383,4 +383,29 @@ def test_draftkings_config_from_settings_env_slate(tmp_path: Path, monkeypatch: 
     assert cfg.entry_fee == 20.0
 
 
+def test_find_dk_files_no_cross_week_leakage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that requesting week 7 never leaks week 6 files or picks up completed output CSVs."""
+    monkeypatch.chdir(tmp_path)
+    # Week 6 has valid salary file
+    w6_dir = tmp_path / "data" / "week-06" / "main-slate"
+    w6_dir.mkdir(parents=True)
+    (w6_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+
+    # Week 7 has only completed_lineups and entries, but NO salary file
+    w7_dir = tmp_path / "data" / "week-07" / "main-slate"
+    w7_dir.mkdir(parents=True)
+    (w7_dir / "completed_lineups.csv").write_text("Entry ID,Contest ID,QB,RB\n")
+    (w7_dir / "DKEntries.csv").write_text("Entry ID,Contest ID\n")
+
+    # Legacy fallback exists
+    legacy_dir = tmp_path / "data" / "players"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+
+    # Should NOT return week 6 and should NOT return completed_lineups.csv or DKEntries.csv
+    found = find_dk_players_csv(slate="main-slate", week=7)
+    assert found == Path("data/players/DKSalaries.csv")
+
+
+
 

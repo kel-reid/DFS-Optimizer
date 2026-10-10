@@ -107,7 +107,7 @@ def find_dk_players_csv(
 
     if slate:
         from src.data.loader import _find_in_slate_dirs
-        patterns = ["*DKSalaries*.csv", "*salaries*.csv", "DKSalaries.csv", "*player*.csv", "*.csv"]
+        patterns = ["*DKSalaries*.csv", "*salaries*.csv", "DKSalaries.csv", "*player*.csv"]
         found = _find_in_slate_dirs(slate, patterns, week, slate_date, "players")
         if found:
             return found
@@ -120,11 +120,17 @@ def find_dk_players_csv(
         if c.exists():
             return c
 
-    matches = list(Path("data").glob("**/*DKSalaries*.csv"))
+    matches = [
+        p for p in Path("data").glob("**/*DKSalaries*.csv")
+        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+    ]
     if matches:
         return matches[0]
 
-    matches_gen = list(Path("data").glob("**/*salaries*.csv"))
+    matches_gen = [
+        p for p in Path("data").glob("**/*salaries*.csv")
+        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+    ]
     if matches_gen:
         return matches_gen[0]
 
@@ -156,7 +162,10 @@ def find_dk_template_csv(
         if c.exists():
             return c
 
-    matches = list(Path("data").glob("**/*DKEntries*.csv"))
+    matches = [
+        p for p in Path("data").glob("**/*DKEntries*.csv")
+        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+    ]
     if matches:
         return matches[0]
 

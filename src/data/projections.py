@@ -42,6 +42,7 @@ def find_projections_csv(
 
     if slate:
         search_dirs: list[Path] = []
+        norm_week = None
         if week:
             # Import inline or normalize here
             s_week = str(week).strip().lower()
@@ -50,19 +51,20 @@ def find_projections_csv(
             search_dirs.append(Path(f"data/{norm_week}/{slate}"))
         if slate_date:
             search_dirs.append(Path(f"data/{slate_date}/{slate}"))
-        for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-            if p not in search_dirs:
-                search_dirs.append(p)
-        for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-            if p not in search_dirs:
-                search_dirs.append(p)
+        if not norm_week and not slate_date:
+            for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
+                if p not in search_dirs:
+                    search_dirs.append(p)
         search_dirs.append(Path(f"data/{slate}"))
         search_dirs.append(Path(f"data/projections/{slate}"))
 
         for s_dir in search_dirs:
             if s_dir.is_dir():
-                for pat in ["*projection*.csv", "*cheatsheet*.csv", "projections.csv", "*.csv"]:
-                    matches = sorted(s_dir.glob(pat))
+                for pat in ["*projection*.csv", "*cheatsheet*.csv", "projections.csv"]:
+                    matches = [
+                        p for p in sorted(s_dir.glob(pat))
+                        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+                    ]
                     if matches:
                         return matches[0]
 
