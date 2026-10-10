@@ -20,11 +20,12 @@ from pydfs_lineup_optimizer import (
     Player,
     PositionsStack,
     RandomFantasyPointsStrategy,
+    Site,
     Sport,
     get_optimizer,
 )
 
-from src.config import SimOptimizerConfig
+from src.config import BaseOptimizerConfig
 
 logger = logging.getLogger("FanDuelSimOptimizer")
 
@@ -36,7 +37,7 @@ class CandidatePoolGenerator:
     a binary NumPy matrix of shape (500, P).
     """
 
-    def __init__(self, optimizer: LineupOptimizer, config: SimOptimizerConfig) -> None:
+    def __init__(self, optimizer: LineupOptimizer, config: BaseOptimizerConfig) -> None:
         self.optimizer = optimizer
         self.config = config
         self.players: List[Player] = list(optimizer.player_pool.filtered_players)
@@ -72,6 +73,7 @@ class CandidatePoolGenerator:
         is_single_game = total_slots < 9
         max_rep = min(self.config.max_repeating_players, total_slots - 1)
         site = self.optimizer.settings.site
+        def_pos = ["DST"] if site == Site.DRAFTKINGS else ["D"]
 
         # Baseline constraints for candidates
         self.optimizer.set_max_repeating_players(max_rep)
@@ -79,7 +81,7 @@ class CandidatePoolGenerator:
             RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
         )
         if not is_single_game:
-            self.optimizer.restrict_positions_for_opposing_team(["D"], ["QB", "RB", "WR", "TE"])
+            self.optimizer.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
         if len(self.optimizer.player_pool.available_teams) >= 3:
             self.optimizer.set_total_teams(min_teams=3)
         elif len(self.optimizer.player_pool.available_teams) == 2:
@@ -124,7 +126,7 @@ class CandidatePoolGenerator:
                 RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
             )
             if not is_single_game:
-                opt_unconstrained.restrict_positions_for_opposing_team(["D"], ["QB", "RB", "WR", "TE"])
+                opt_unconstrained.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
             if len(opt_unconstrained.player_pool.available_teams) >= 3:
                 opt_unconstrained.set_total_teams(min_teams=3)
             elif len(opt_unconstrained.player_pool.available_teams) == 2:

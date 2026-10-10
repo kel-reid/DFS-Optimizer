@@ -43,7 +43,7 @@ global:
 fanduel:
   salary_cap: 60000
   min_field_salary: 58500
-  default_entry_fee: 0.05
+  default_entry_fee: 1.00
   simulation:
     num_candidates: 500
     num_field_lineups: 10000
@@ -63,12 +63,16 @@ fanduel:
     exclude_out_injured: true
     zero_unprojected: true
     strict_exposure_caps: false
-    zero_unprojected: true
 
 draftkings:
   salary_cap: 50000
-  default_entry_fee: 3.00
+  min_field_salary: 48500
+  default_entry_fee: 1.00
   simulation:
+    num_candidates: 500
+    num_field_lineups: 10000
+    num_sim_trials: 5000
+    num_selected_lineups: 150
     num_lineups: 150
   exposure_caps:
     max_qb_exposure: 0.25

@@ -15,7 +15,7 @@ from typing import List, Tuple
 import numpy as np
 from pydfs_lineup_optimizer import Player
 
-from src.config import SimOptimizerConfig
+from src.config import BaseOptimizerConfig
 
 logger = logging.getLogger("FanDuelSimOptimizer")
 
@@ -26,7 +26,7 @@ class CorrelatedGameEngine:
     tournament scoring and ranking against the opponent field.
     """
 
-    def __init__(self, players: List[Player], config: SimOptimizerConfig) -> None:
+    def __init__(self, players: List[Player], config: BaseOptimizerConfig) -> None:
         self.players = players
         self.config = config
         self.P = len(players)
@@ -97,7 +97,7 @@ class CorrelatedGameEngine:
         sim_points = np.copy(base_draws)
         for i in range(P):
             if self.players[i].fppg > 0.0:
-                if "D" in self.players[i].positions:
+                if "D" in self.players[i].positions or "DST" in self.players[i].positions:
                     opp_t_idx = self.player_opp_indices[i]
                     if opp_t_idx >= 0:
                         opp_shock = np.exp(-sigma_team * team_z[opp_t_idx, :] - 0.5 * (sigma_team ** 2))

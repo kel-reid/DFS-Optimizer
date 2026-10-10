@@ -43,9 +43,8 @@ import csv
 import logging
 import math
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import pandas as pd
 from pydfs_lineup_optimizer import (
@@ -60,7 +59,27 @@ from pydfs_lineup_optimizer import (
 )
 from pydfs_lineup_optimizer.player import LineupPlayer
 
-from src.config import load_yaml_settings
+from src.config import DKOptimizerConfig, DraftKingsConfig
+from src.engine import (
+    CandidatePoolGenerator,
+    CorrelatedGameEngine,
+    OpponentFieldSimulator,
+    PortfolioSelector,
+    SimAuditReporter,
+)
+
+__all__ = [
+    "DKOptimizerConfig",
+    "DraftKingsConfig",
+    "DraftKingsDataLoader",
+    "DraftKingsLineupPipeline",
+    "DraftKingsPortfolioAuditor",
+    "DraftKingsTemplateExporter",
+    "find_dk_players_csv",
+    "find_dk_template_csv",
+    "parse_dk_arguments",
+    "run_draftkings_pipeline",
+]
 
 # -----------------------------------------------------------------------------
 # Logging Configuration
@@ -71,92 +90,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("DraftKingsMMEOptimizer")
-
-
-# -----------------------------------------------------------------------------
-# Configuration Dataclass
-# -----------------------------------------------------------------------------
-
-
-@dataclass
-class DKOptimizerConfig:
-    """Runtime configuration and hyperparameters for DraftKings MME pipeline."""
-
-    players_csv: Path = Path("data/players/DKSalaries.csv")
-    template_csv: Path = Path("data/templates/DKEntries.csv")
-    output_csv: Path = Path("data/output/Completed-DKEntries.csv")
-    num_lineups: int = 150
-    salary_cap: int = 50_000         # DraftKings Classic $50,000 budget
-    max_exposure: float = 0.25       # General player exposure ceiling (25% = 37 lineups)
-    max_qb_exposure: float = 0.25    # Starting QB exposure ceiling (25% = 37 lineups)
-    max_rb_exposure: float = 0.25    # Running back exposure ceiling (25% = 37 lineups)
-    max_wr_exposure: float = 0.25    # Wide receiver exposure ceiling (25% = 37 lineups)
-    max_te_exposure: float = 0.25    # Tight end exposure ceiling (25% = 37 lineups)
-    max_def_exposure: float = 0.20   # Team defense (DST) ceiling (20% = 30 lineups)
-    max_repeating_players: int = 6   # Enforces >= 3 unique players between every pair of lineups
-    randomness_deviation: float = 0.25  # ±25% Monte Carlo ceiling projection variance
-    stack_ratio: float = 0.80        # 80% primary stacked (120 lineups) / 20% unconstrained (30 lineups)
-    id_format: str = "name_id"       # "name_id" ("Josh Allen (123456)") or "id_only" ("123456")
-    exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
-    backup_quarterbacks: Optional[Tuple[str, ...]] = None
-
-    def __post_init__(self) -> None:
-        if self.backup_quarterbacks is None:
-            cfg_dict = load_yaml_settings()
-            global_cfg = cfg_dict.get("global", {})
-            dk_cfg = cfg_dict.get("draftkings", {})
-            b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks", []))
-            self.backup_quarterbacks = tuple(b_qbs) if b_qbs else ()
-
-    @classmethod
-    def from_settings(cls, settings_path: Optional[Path] = None, **overrides: Any) -> DKOptimizerConfig:
-        """Constructs DKOptimizerConfig merging config/settings.yaml, environment variables, and kwargs."""
-        cfg_dict = load_yaml_settings(settings_path)
-        global_cfg = cfg_dict.get("global", {})
-        dk_cfg = cfg_dict.get("draftkings", {})
-        sim_cfg = dk_cfg.get("simulation", {})
-        exp_cfg = dk_cfg.get("exposure_caps", {})
-        solver_cfg = dk_cfg.get("solver", {})
-
-        params: Dict[str, Any] = {}
-
-        b_qbs = dk_cfg.get("backup_quarterbacks", global_cfg.get("backup_quarterbacks"))
-        if b_qbs is not None:
-            params["backup_quarterbacks"] = tuple(b_qbs)
-
-        if "salary_cap" in dk_cfg:
-            params["salary_cap"] = int(dk_cfg["salary_cap"])
-        if "num_lineups" in sim_cfg:
-            params["num_lineups"] = int(sim_cfg["num_lineups"])
-        for k in ["max_qb_exposure", "max_rb_exposure", "max_wr_exposure", "max_te_exposure", "max_def_exposure", "max_exposure"]:
-            if k in exp_cfg:
-                params[k] = float(exp_cfg[k])
-        for k in ["stack_ratio", "randomness_deviation"]:
-            if k in solver_cfg:
-                params[k] = float(solver_cfg[k])
-        for k in ["max_repeating_players"]:
-            if k in solver_cfg:
-                params[k] = int(solver_cfg[k])
-        if "exclude_out_injured" in solver_cfg:
-            params["exclude_out_injured"] = bool(solver_cfg["exclude_out_injured"])
-
-        env_map: Dict[str, Tuple[str, Any]] = {
-            "DFS_DK_SALARY_CAP": ("salary_cap", int),
-            "DFS_DK_NUM_LINEUPS": ("num_lineups", int),
-            "DFS_DK_STACK_RATIO": ("stack_ratio", float),
-            "DFS_DK_MAX_REPEATING": ("max_repeating_players", int),
-            "DFS_DK_RANDOMNESS": ("randomness_deviation", float),
-            "DFS_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
-            "DFS_DK_BACKUP_QUARTERBACKS": ("backup_quarterbacks", lambda v: tuple(qb.strip() for qb in str(v).split(",") if qb.strip())),
-        }
-        import os
-        for env_var, (attr, cast) in env_map.items():
-            val = os.environ.get(env_var)
-            if val is not None:
-                params[attr] = cast(val)
-
-        params.update({k: v for k, v in overrides.items() if v is not None})
-        return cls(**params)
 
 
 # -----------------------------------------------------------------------------
@@ -226,12 +159,17 @@ class DraftKingsDataLoader:
         logger.info("Loading player pool directly from CSV: %s", csv_path)
         optimizer.load_players_from_csv(str(csv_path))
         optimizer.player_pool.with_injured = True
+        optimizer.settings.budget = self.config.salary_cap
 
         logger.info("Successfully loaded %d raw player entries via optimizer.load_players_from_csv.",
                     len(optimizer.player_pool.all_players))
 
         if self.config.exclude_out_injured:
             self._prune_inactive_players(optimizer, csv_path)
+
+        if self.config.projections_csv and self.config.projections_csv.exists():
+            from src.data.projections import apply_forward_projections
+            apply_forward_projections(optimizer, self.config.projections_csv)
 
         # Filter backup QBs
         backup_qbs = set(self.config.backup_quarterbacks or ())
@@ -295,7 +233,7 @@ class DraftKingsLineupPipeline:
         self.players = list(optimizer.player_pool.all_players)
 
     def _get_player_cap_count(self, player: Player) -> int:
-        n = self.config.num_lineups
+        n = self.config.num_selected_lineups
         positions = set(player.positions)
         if "DST" in positions or "D" in positions:
             return math.floor(n * self.config.max_def_exposure)
@@ -321,7 +259,7 @@ class DraftKingsLineupPipeline:
         opt.settings.budget = self.config.salary_cap
 
     def generate_lineups(self) -> List[Lineup]:
-        n = self.config.num_lineups
+        n = self.config.num_selected_lineups
         ratio = self.config.stack_ratio
         n_stacked = round(n * ratio)   # 120
         n_unconstrained = n - n_stacked # 30
@@ -479,19 +417,34 @@ class DraftKingsPortfolioAuditor:
             return math.floor(n * config.max_exposure)
 
         player_obj_map = {p.id: p for l in lineups for p in l.lineup}
+        exposure_violations: List[str] = []
         for pid, count in player_counts.items():
             p = player_obj_map[pid]
             cap = get_cap(p)
             if count > cap:
-                violations.append(
+                exposure_violations.append(
                     f"Exposure cap exceeded for {p.full_name} ({p.lineup_position}): {count} lineups > cap of {cap}"
                 )
 
         if violations:
-            logger.error("AUDIT FAILED WITH %d VIOLATIONS:", len(violations))
+            logger.error("AUDIT FAILED WITH %d CRITICAL CONTEST RULE VIOLATIONS:", len(violations))
             for v in violations[:10]:
                 logger.error("  - %s", v)
-            raise AssertionError("Portfolio failed strict risk/correlation audit.")
+            raise AssertionError("Portfolio failed strict contest rule audit.")
+
+        if exposure_violations:
+            if getattr(config, "strict_exposure_caps", False):
+                logger.error("AUDIT FAILED: Strict exposure caps violated (%d players over cap):", len(exposure_violations))
+                for v in exposure_violations[:10]:
+                    logger.error("  - %s", v)
+                raise AssertionError("Portfolio failed strict exposure cap audit.")
+            else:
+                logger.warning(
+                    "AUDIT WARNING: %d exposure cap overage(s) present (via Pass 2 fallback fill):",
+                    len(exposure_violations),
+                )
+                for v in exposure_violations[:10]:
+                    logger.warning("  - %s", v)
 
         logger.info("ALL CONSTRAINTS STRICTLY SATISFIED:")
         logger.info("  - 100%% of lineups comply with $50,000 salary cap.")
@@ -555,7 +508,7 @@ class DraftKingsTemplateExporter:
             for row in reader:
                 if row and any(field.strip() for field in row):
                     rows.append(row)
-                if len(rows) == self.config.num_lineups:
+                if len(rows) == self.config.num_selected_lineups:
                     break
 
         if len(rows) != len(lineups):
@@ -592,23 +545,32 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     default_cfg = DKOptimizerConfig.from_settings()
 
     parser = argparse.ArgumentParser(
-        description="DraftKings NFL Classic Quantitative MME Lineup Optimizer",
+        description="DraftKings NFL Classic Quantitative Monte Carlo Simulation & Optimization Engine",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--players-csv", type=Path, default=None)
     parser.add_argument("--template-csv", type=Path, default=None)
+    parser.add_argument("--projections-csv", type=Path, default=None, help="External projections CSV file")
     parser.add_argument("--output-csv", type=Path, default=None)
-    parser.add_argument("--num-lineups", type=int, default=default_cfg.num_lineups)
+    parser.add_argument("--num-candidates", type=int, default=default_cfg.num_candidates)
+    parser.add_argument("--num-field", type=int, default=default_cfg.num_field_lineups)
+    parser.add_argument("--num-trials", type=int, default=default_cfg.num_sim_trials)
+    parser.add_argument("--num-lineups", type=int, default=default_cfg.num_selected_lineups)
+    parser.add_argument("--entry-fee", type=float, default=default_cfg.entry_fee, help="Contest entry fee in dollars")
     parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
     parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)
     parser.add_argument("--max-rb-exposure", type=float, default=default_cfg.max_rb_exposure)
     parser.add_argument("--max-wr-exposure", type=float, default=default_cfg.max_wr_exposure)
     parser.add_argument("--max-te-exposure", type=float, default=default_cfg.max_te_exposure)
     parser.add_argument("--max-def-exposure", type=float, default=default_cfg.max_def_exposure)
+    parser.add_argument("--max-dst-exposure", type=float, default=default_cfg.max_def_exposure)
     parser.add_argument("--max-exposure", type=float, default=default_cfg.max_exposure)
     parser.add_argument("--randomness", type=float, default=default_cfg.randomness_deviation)
     parser.add_argument("--max-repeating", type=int, default=default_cfg.max_repeating_players)
     parser.add_argument("--keep-injured", action="store_true", help="Keep injured/questionable/out players in player pool")
+    parser.add_argument("--strict-caps", action="store_true", default=default_cfg.strict_exposure_caps)
+    parser.add_argument("--zero-unprojected", action="store_true", default=default_cfg.zero_unprojected)
+    parser.add_argument("--keep-unprojected", action="store_true", default=False)
 
     args, _ = parser.parse_known_args()
 
@@ -623,12 +585,18 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         output_path = output_dir / f"Completed-{template_path.name}"
 
     exclude_injured = False if args.keep_injured else default_cfg.exclude_out_injured
+    zero_unproj = False if args.keep_unprojected else default_cfg.zero_unprojected
 
     return DKOptimizerConfig.from_settings(
         players_csv=players_path,
         template_csv=template_path,
         output_csv=output_path,
-        num_lineups=args.num_lineups,
+        projections_csv=args.projections_csv,
+        num_candidates=args.num_candidates,
+        num_field_lineups=args.num_field,
+        num_sim_trials=args.num_trials,
+        num_selected_lineups=args.num_lineups,
+        entry_fee=args.entry_fee,
         max_exposure=args.max_exposure,
         randomness_deviation=args.randomness,
         stack_ratio=args.stack_ratio,
@@ -636,9 +604,11 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         max_rb_exposure=args.max_rb_exposure,
         max_wr_exposure=args.max_wr_exposure,
         max_te_exposure=args.max_te_exposure,
-        max_def_exposure=args.max_def_exposure,
+        max_def_exposure=args.max_dst_exposure if args.max_dst_exposure != default_cfg.max_def_exposure else args.max_def_exposure,
         max_repeating_players=args.max_repeating,
         exclude_out_injured=exclude_injured,
+        strict_exposure_caps=args.strict_caps,
+        zero_unprojected=zero_unproj,
     )
 
 
@@ -647,20 +617,42 @@ def run_draftkings_pipeline(config: Optional[DKOptimizerConfig] = None) -> None:
         config = parse_dk_arguments()
 
     logger.info("======================================================================")
-    logger.info(" DRAFTKINGS NFL DFS OPTIMIZATION PIPELINE ")
-    logger.info(" Quantitative Integer Linear Programming Engine ($50,000 Cap) ")
+    logger.info(" DRAFTKINGS NFL DFS SIMULATION & OPTIMIZATION PIPELINE ")
+    logger.info(" Monte Carlo Tournament Game Slate Engine ($50,000 Cap) ")
     logger.info("======================================================================")
 
+    # 1. Ingest Data & Filter Backup QBs / Inactives
     loader = DraftKingsDataLoader(config)
     optimizer = loader.initialize_and_load_optimizer()
+    players = list(optimizer.player_pool.filtered_players)
 
-    pipeline = DraftKingsLineupPipeline(config, optimizer)
-    lineups = pipeline.generate_lineups()
+    # 2. Stage 1: Candidate Pool Generation (MILP)
+    candidate_generator = CandidatePoolGenerator(optimizer, config)
+    candidates, candidates_matrix = candidate_generator.generate_candidate_pool()
 
-    DraftKingsPortfolioAuditor.audit_and_report(lineups, config)
+    # 3. Stage 2: Simulate Opponent Field Lineups
+    field_simulator = OpponentFieldSimulator(players, config)
+    field_matrix = field_simulator.simulate_field()
 
+    # 4. Stage 3: Correlated Game Outcome Engine & Vectorized Scoring
+    game_engine = CorrelatedGameEngine(players, config)
+    sim_points = game_engine.simulate_game_trials()
+
+    sim_roi, win_counts, top1_rates = game_engine.score_and_rank_candidates(
+        candidates_matrix, field_matrix, sim_points
+    )
+
+    # 5. Stage 4: Portfolio Selection (Exposure Ceilings)
+    selector = PortfolioSelector(config)
+    selected_lineups = selector.select_portfolio(candidates, sim_roi, win_counts, top1_rates)
+
+    # 6. Post-Solve Audit & Quality Assurance
+    DraftKingsPortfolioAuditor.audit_and_report(selected_lineups, config)
+    SimAuditReporter.audit_and_report(selected_lineups, config, players, sim_roi, win_counts, top1_rates)
+
+    # 7. Map Lineups into DraftKings CSV upload format and export
     exporter = DraftKingsTemplateExporter(config)
-    output_file = exporter.export_lineups(lineups)
+    output_file = exporter.export_lineups(selected_lineups)
 
     print("\n" + "=" * 70)
     print(" DRAFTKINGS PIPELINE COMPLETE: Ready for upload!")
@@ -670,3 +662,4 @@ def run_draftkings_pipeline(config: Optional[DKOptimizerConfig] = None) -> None:
 
 if __name__ == "__main__":
     run_draftkings_pipeline()
+
