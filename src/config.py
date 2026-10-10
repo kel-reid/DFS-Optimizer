@@ -243,7 +243,7 @@ class SimOptimizerConfig(BaseOptimizerConfig):
 
         # Auto-detect entry fee from template CSV if not explicitly overridden by kwargs or env
         if ("entry_fee" not in overrides or overrides.get("entry_fee") is None) and "DFS_ENTRY_FEE" not in os.environ:
-            tmpl_path = params.get("template_csv")
+            tmpl_path = params.get("template_csv") or getattr(cls, "template_csv", None)
             detected_fee = detect_entry_fee(tmpl_path)
             if detected_fee is not None:
                 params["entry_fee"] = detected_fee
@@ -479,7 +479,7 @@ class DraftKingsConfig(BaseOptimizerConfig):
 
         # Auto-detect entry fee from template CSV if not explicitly overridden by kwargs or env
         if "entry_fee" not in normalized_overrides and "DFS_DK_ENTRY_FEE" not in os.environ and "DFS_ENTRY_FEE" not in os.environ:
-            tmpl_path = params.get("template_csv") or params.get("entries_csv")
+            tmpl_path = params.get("template_csv") or params.get("entries_csv") or getattr(cls, "template_csv", None)
             detected_fee = detect_entry_fee(tmpl_path)
             if detected_fee is not None:
                 params["entry_fee"] = detected_fee

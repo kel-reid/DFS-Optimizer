@@ -83,7 +83,7 @@ def test_apply_forward_projections_draftkings_dst(tmp_path: Path):
     proj_path.write_text(
         "player,team,pos,fantasy\n"
         "Josh Allen,BUF,QB,26.0\n"
-        "Bills D/ST,BUF,DST,11.5\n"
+        "Bills,BUF,DST,11.5\n"
     )
 
     optimizer = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)

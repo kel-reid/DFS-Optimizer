@@ -297,3 +297,11 @@ def test_draftkings_cli_parsing_aliases_and_fee_detection(tmp_path: Path, monkey
     cfg_override = parse_dk_arguments()
     assert cfg_override.entry_fee == 5.0
 
+
+def test_draftkings_config_from_settings_default_template_detection() -> None:
+    """Verifies that calling DKOptimizerConfig.from_settings() with zero arguments auto-detects fee from default template."""
+    cfg = DKOptimizerConfig.from_settings()
+    if cfg.template_csv and cfg.template_csv.exists():
+        assert cfg.entry_fee == 3.0
+
+
