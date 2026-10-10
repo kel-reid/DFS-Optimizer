@@ -104,5 +104,64 @@ def test_resolve_site_workspace_fallback():
     assert site in ("fanduel", "draftkings")
 
 
+def test_resolve_site_with_slate_and_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    # DraftKings slate
+    dk_slate = tmp_path / "data" / "week-09" / "main-slate"
+    dk_slate.mkdir(parents=True)
+    (dk_slate / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+    assert resolve_site(slate="main-slate", week=9) == "draftkings"
+
+    # FanDuel slate
+    fd_slate = tmp_path / "data" / "week-09" / "sunday-night"
+    fd_slate.mkdir(parents=True)
+    (fd_slate / "players.csv").write_text("Id,Position,FPPG,Nickname\n")
+    assert resolve_site(slate="sunday-night", week="09") == "fanduel"
+
+
+def test_resolve_site_ambiguous_in_slate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    mixed_slate = tmp_path / "data" / "week-10" / "main-slate"
+    mixed_slate.mkdir(parents=True)
+    (mixed_slate / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+    (mixed_slate / "FanDuel-NFL-players-list.csv").write_text("Id,Position,FPPG,Nickname\n")
+
+    with pytest.raises(ValueError, match="Ambiguous slate files detected"):
+        resolve_site(slate="main-slate", week=10)
+
+
+def test_resolve_site_no_cross_week_leakage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    # Week 9 has FanDuel files
+    fd_slate = tmp_path / "data" / "week-09" / "main-slate"
+    fd_slate.mkdir(parents=True)
+    (fd_slate / "players.csv").write_text("Id,Position,FPPG,Nickname\n")
+
+    # Week 10 has empty folder
+    w10_slate = tmp_path / "data" / "week-10" / "main-slate"
+    w10_slate.mkdir(parents=True)
+
+    # Legacy default is fanduel only when unresolvable, but let's test with DK legacy file present
+    dk_legacy = tmp_path / "data" / "players"
+    dk_legacy.mkdir(parents=True)
+    (dk_legacy / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+
+    # Asking for week 10 main-slate should NOT see week 09 and resolve to fanduel;
+    # it falls back to the workspace DK file
+    assert resolve_site(slate="main-slate", week=10) == "draftkings"
+
+
+def test_resolve_site_with_slate_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    # DraftKings date-based slate
+    date_dir = tmp_path / "data" / "2026-10-15" / "thursday-night"
+    date_dir.mkdir(parents=True)
+    (date_dir / "DKSalaries.csv").write_text("Position,Name + ID,TeamAbbrev,AvgPointsPerGame\n")
+    assert resolve_site(slate="thursday-night", slate_date="2026-10-15") == "draftkings"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+

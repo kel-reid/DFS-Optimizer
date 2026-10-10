@@ -57,15 +57,11 @@ def _find_in_slate_dirs(
     if slate_date:
         search_dirs.append(Path(f"data/{slate_date}/{slate}"))
 
-    # Search week-based directories in descending order (e.g. week-18 down to week-01)
-    for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-        if p not in search_dirs:
-            search_dirs.append(p)
-
-    # Search any remaining slate directories
-    for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-        if p not in search_dirs:
-            search_dirs.append(p)
+    # Only perform cross-week scan if neither explicit week nor slate_date was provided
+    if not norm_week and not slate_date:
+        for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
+            if p not in search_dirs:
+                search_dirs.append(p)
 
     search_dirs.append(Path(f"data/{slate}"))
     if legacy_folder:
@@ -74,7 +70,10 @@ def _find_in_slate_dirs(
     for s_dir in search_dirs:
         if s_dir.is_dir():
             for pat in patterns:
-                matches = sorted(s_dir.glob(pat))
+                matches = [
+                    p for p in sorted(s_dir.glob(pat))
+                    if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+                ]
                 if matches:
                     return matches[0]
     return None

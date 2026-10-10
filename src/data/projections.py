@@ -40,47 +40,60 @@ def find_projections_csv(
     if explicit_path and explicit_path.exists():
         return explicit_path
 
+    norm_week = None
+    if week:
+        # Import inline or normalize here
+        s_week = str(week).strip().lower()
+        m = re.search(r"\d+", s_week)
+        norm_week = f"week-{int(m.group(0)):02d}" if m else s_week
+
     if slate:
         search_dirs: list[Path] = []
-        if week:
-            # Import inline or normalize here
-            s_week = str(week).strip().lower()
-            m = re.search(r"\d+", s_week)
-            norm_week = f"week-{int(m.group(0)):02d}" if m else s_week
+        if norm_week:
             search_dirs.append(Path(f"data/{norm_week}/{slate}"))
         if slate_date:
             search_dirs.append(Path(f"data/{slate_date}/{slate}"))
-        for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-            if p not in search_dirs:
-                search_dirs.append(p)
-        for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
-            if p not in search_dirs:
-                search_dirs.append(p)
+        if not norm_week and not slate_date:
+            for p in sorted(Path("data").glob(f"week-*/{slate}"), reverse=True):
+                if p not in search_dirs:
+                    search_dirs.append(p)
         search_dirs.append(Path(f"data/{slate}"))
         search_dirs.append(Path(f"data/projections/{slate}"))
 
         for s_dir in search_dirs:
             if s_dir.is_dir():
-                for pat in ["*projection*.csv", "*cheatsheet*.csv", "projections.csv", "*.csv"]:
-                    matches = sorted(s_dir.glob(pat))
+                for pat in ["*projection*.csv", "*cheatsheet*.csv", "projections.csv"]:
+                    matches = [
+                        p for p in sorted(s_dir.glob(pat))
+                        if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+                    ]
                     if matches:
                         return matches[0]
 
-    candidates = [
-        Path("data/week-05/main-slate/projections.csv"),
-        Path("data/week-05/main-slate/DFF_NFL_cheatsheet_2026-10-04.csv"),
-        Path("data/week-05/sunday-night/projections.csv"),
-        Path("data/week-05/monday-night/projections.csv"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
+    # Only fall back to week-05 candidates if neither explicit week nor slate_date was given,
+    # or if week-05 was explicitly requested.
+    if norm_week in (None, "week-05") and not slate_date:
+        candidates = [
+            Path("data/week-05/main-slate/projections.csv"),
+            Path("data/week-05/main-slate/DFF_NFL_cheatsheet_2026-10-04.csv"),
+            Path("data/week-05/sunday-night/projections.csv"),
+            Path("data/week-05/monday-night/projections.csv"),
+        ]
+        if slate:
+            candidates = [c for c in candidates if c.parent.name == slate]
+        for c in candidates:
+            if c.exists():
+                return c
 
-    proj_dir = Path("data/projections")
-    if proj_dir.is_dir():
-        csv_files = sorted(proj_dir.glob("*.csv"))
-        if csv_files:
-            return csv_files[0]
+    if not norm_week and not slate_date and not slate:
+        proj_dir = Path("data/projections")
+        if proj_dir.is_dir():
+            csv_files = [
+                p for p in sorted(proj_dir.glob("*.csv"))
+                if not p.name.startswith("Completed-") and p.name != "completed_lineups.csv"
+            ]
+            if csv_files:
+                return csv_files[0]
 
     return None
 

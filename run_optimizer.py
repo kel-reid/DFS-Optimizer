@@ -43,11 +43,17 @@ def main() -> None:
     parser.add_argument("--players-csv", type=Path, default=None)
     parser.add_argument("--template-csv", type=Path, default=None)
     parser.add_argument("--projections-csv", type=Path, default=None)
+    parser.add_argument("--week", type=str, default=None)
+    parser.add_argument("--slate", type=str, default=None)
+    parser.add_argument("--date", type=str, default=None)
     args, _ = parser.parse_known_args()
 
     site = resolve_site(
         players_path=args.players_csv,
         template_path=args.template_csv,
+        slate=args.slate,
+        week=args.week,
+        slate_date=args.date,
     )
 
     if site == "draftkings":

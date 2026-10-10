@@ -27,6 +27,8 @@ from src.build_draftkings_lineups import (
     DraftKingsConfig,
     DraftKingsPortfolioAuditor,
     DraftKingsTemplateExporter,
+    find_dk_players_csv,
+    find_dk_template_csv,
     parse_dk_arguments,
 )
 from src.config import BaseOptimizerConfig, detect_entry_fee
@@ -303,5 +305,155 @@ def test_draftkings_config_from_settings_default_template_detection() -> None:
     cfg = DKOptimizerConfig.from_settings()
     if cfg.template_csv and cfg.template_csv.exists():
         assert cfg.entry_fee == 3.0
+
+
+def test_find_dk_files_with_slate_and_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that find_dk_players_csv and find_dk_template_csv discover files in week/slate folders."""
+    monkeypatch.chdir(tmp_path)
+    slate_dir = tmp_path / "data" / "week-06" / "main-slate"
+    slate_dir.mkdir(parents=True)
+    salaries = slate_dir / "DKSalaries.csv"
+    salaries.write_text("Position,Name + ID,Salary\n")
+    entries = slate_dir / "DKEntries.csv"
+    entries.write_text("Entry ID,Contest ID\n")
+
+    found_players = find_dk_players_csv(slate="main-slate", week=6)
+    assert found_players == Path("data/week-06/main-slate/DKSalaries.csv")
+
+    found_template = find_dk_template_csv(slate="main-slate", week="06")
+    assert found_template == Path("data/week-06/main-slate/DKEntries.csv")
+
+
+def test_find_dk_files_fallback_to_legacy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies fallback to data/players/ and data/templates/ when no slate is specified."""
+    monkeypatch.chdir(tmp_path)
+    players_dir = tmp_path / "data" / "players"
+    players_dir.mkdir(parents=True)
+    (players_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+
+    templates_dir = tmp_path / "data" / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "DKEntries.csv").write_text("Entry ID,Contest ID\n")
+
+    assert find_dk_players_csv() == Path("data/players/DKSalaries.csv")
+    assert find_dk_template_csv() == Path("data/templates/DKEntries.csv")
+
+
+def test_draftkings_cli_parsing_slate_and_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies parse_dk_arguments resolves paths to data/<week>/<slate>/ and outputs completed_lineups.csv."""
+    monkeypatch.chdir(tmp_path)
+    slate_dir = tmp_path / "data" / "week-07" / "sunday-night"
+    slate_dir.mkdir(parents=True)
+    (slate_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+    (slate_dir / "DKEntries.csv").write_text("Entry ID,Contest ID,Contest Name,Entry Fee\n1,100,Test,$10.00\n")
+
+    test_args = [
+        "build_draftkings_lineups.py",
+        "--week", "7",
+        "--slate", "sunday-night",
+    ]
+    monkeypatch.setattr("sys.argv", test_args)
+    cfg = parse_dk_arguments()
+
+    assert cfg.week == "week-07"
+    assert cfg.slate == "sunday-night"
+    assert cfg.players_csv == Path("data/week-07/sunday-night/DKSalaries.csv")
+    assert cfg.template_csv == Path("data/week-07/sunday-night/DKEntries.csv")
+    assert cfg.output_csv == Path("data/week-07/sunday-night/completed_lineups.csv")
+    assert cfg.entry_fee == 10.0
+
+
+def test_draftkings_config_from_settings_env_slate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies DKOptimizerConfig.from_settings respects DFS_DK_WEEK and DFS_DK_SLATE environment variables."""
+    monkeypatch.chdir(tmp_path)
+    slate_dir = tmp_path / "data" / "week-08" / "main-slate"
+    slate_dir.mkdir(parents=True)
+    (slate_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+    (slate_dir / "DKEntries.csv").write_text("Entry ID,Contest ID,Contest Name,Entry Fee\n1,100,Test,$20.00\n")
+
+    monkeypatch.setenv("DFS_DK_WEEK", "8")
+    monkeypatch.setenv("DFS_DK_SLATE", "main-slate")
+
+    cfg = DKOptimizerConfig.from_settings()
+    assert cfg.week == "week-08"
+    assert cfg.slate == "main-slate"
+    assert cfg.players_csv == Path("data/week-08/main-slate/DKSalaries.csv")
+    assert cfg.template_csv == Path("data/week-08/main-slate/DKEntries.csv")
+    assert cfg.output_csv == Path("data/week-08/main-slate/completed_lineups.csv")
+    assert cfg.entry_fee == 20.0
+
+
+def test_find_dk_files_no_cross_week_leakage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that requesting week 7 raises FileNotFoundError instead of leaking week 6 or output CSVs."""
+    monkeypatch.chdir(tmp_path)
+    # Week 6 has valid salary file
+    w6_dir = tmp_path / "data" / "week-06" / "main-slate"
+    w6_dir.mkdir(parents=True)
+    (w6_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+    (w6_dir / "DKEntries.csv").write_text("Entry ID,Contest ID\n")
+
+    # Week 7 has only completed_lineups and entries, but NO salary file
+    w7_dir = tmp_path / "data" / "week-07" / "main-slate"
+    w7_dir.mkdir(parents=True)
+    (w7_dir / "completed_lineups.csv").write_text("Entry ID,Contest ID,QB,RB\n")
+    (w7_dir / "DKEntries.csv").write_text("Entry ID,Contest ID\n")
+
+    # Should raise FileNotFoundError rather than returning week 6 or completed_lineups.csv
+    with pytest.raises(FileNotFoundError, match="Could not locate DraftKings players/salaries CSV"):
+        find_dk_players_csv(slate="main-slate", week=7)
+
+    # Missing template for week 8 should also raise FileNotFoundError
+    with pytest.raises(FileNotFoundError, match="Could not locate DraftKings entries template CSV"):
+        find_dk_template_csv(slate="main-slate", week=8)
+
+
+def test_draftkings_date_dir_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies path and output resolution using slate_date without week."""
+    monkeypatch.chdir(tmp_path)
+    date_dir = tmp_path / "data" / "2026-10-11" / "sunday-night"
+    date_dir.mkdir(parents=True)
+    (date_dir / "DKSalaries.csv").write_text("Position,Name + ID,Salary\n")
+    (date_dir / "DKEntries.csv").write_text("Entry ID,Contest ID,Contest Name,Entry Fee\n1,100,Test,$15.00\n")
+
+    # 1. find_dk_players_csv with date
+    players = find_dk_players_csv(slate="sunday-night", slate_date="2026-10-11")
+    assert players == Path("data/2026-10-11/sunday-night/DKSalaries.csv")
+
+    # 2. find_dk_template_csv with date
+    tmpl = find_dk_template_csv(slate="sunday-night", slate_date="2026-10-11")
+    assert tmpl == Path("data/2026-10-11/sunday-night/DKEntries.csv")
+
+    # 3. parse_dk_arguments with --date
+    test_args = [
+        "build_draftkings_lineups.py",
+        "--slate", "sunday-night",
+        "--date", "2026-10-11",
+    ]
+    monkeypatch.setattr("sys.argv", test_args)
+    cfg = parse_dk_arguments()
+    assert cfg.slate_date == "2026-10-11"
+    assert cfg.players_csv == Path("data/2026-10-11/sunday-night/DKSalaries.csv")
+    assert cfg.output_csv == Path("data/2026-10-11/sunday-night/completed_lineups.csv")
+    assert cfg.entry_fee == 15.0
+
+    # 4. DKOptimizerConfig.from_settings with date_dir
+    cfg_settings = DKOptimizerConfig.from_settings(slate="sunday-night", slate_date="2026-10-11")
+    assert cfg_settings.output_csv == Path("data/2026-10-11/sunday-night/completed_lineups.csv")
+    assert cfg_settings.entry_fee == 15.0
+
+
+def test_draftkings_config_from_settings_nonexistent_slate_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies output_csv routes to data/output/<slate>/Completed-<template> when slate dir does not exist."""
+    monkeypatch.chdir(tmp_path)
+    # Provide explicit template to test output_csv fallback
+    tmpl = tmp_path / "CustomTemplate.csv"
+    tmpl.write_text("Entry ID,Contest ID,Contest Name,Entry Fee\n1,100,Test,$5.00\n")
+
+    cfg = DKOptimizerConfig.from_settings(slate="future-slate", week="99", template_csv=tmpl)
+    assert cfg.output_csv == Path("data/output/future-slate/Completed-CustomTemplate.csv")
+    assert cfg.entry_fee == 5.0
+
+
+
 
 
