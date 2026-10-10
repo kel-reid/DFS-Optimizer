@@ -216,3 +216,50 @@ def test_sim_optimizer_config_exposure_bounds_validation():
     assert cfg_zero.single_game_max_exposure == 0.0
     cfg_one = SimOptimizerConfig(single_game_max_exposure=1.0, max_exposure=1.0)
     assert cfg_one.single_game_max_exposure == 1.0
+
+
+def test_exposure_caps_environment_variables(monkeypatch: pytest.MonkeyPatch):
+    """Verify skill position and general exposure caps can be configured via environment variables."""
+    from src.config import DraftKingsConfig
+
+    monkeypatch.setenv("DFS_MAX_QB_EXPOSURE", "0.45")
+    monkeypatch.setenv("DFS_MAX_RB_EXPOSURE", "0.55")
+    monkeypatch.setenv("DFS_MAX_WR_EXPOSURE", "0.65")
+    monkeypatch.setenv("DFS_MAX_TE_EXPOSURE", "0.35")
+    monkeypatch.setenv("DFS_MAX_DEF_EXPOSURE", "0.25")
+    monkeypatch.setenv("DFS_MAX_EXPOSURE", "0.75")
+
+    # 1. FanDuel SimOptimizerConfig
+    fd_cfg = SimOptimizerConfig.from_settings()
+    assert fd_cfg.max_qb_exposure == 0.45
+    assert fd_cfg.max_rb_exposure == 0.55
+    assert fd_cfg.max_wr_exposure == 0.65
+    assert fd_cfg.max_te_exposure == 0.35
+    assert fd_cfg.max_def_exposure == 0.25
+    assert fd_cfg.max_exposure == 0.75
+
+    # 2. DraftKingsConfig inherits generic DFS_ variables
+    dk_cfg = DraftKingsConfig.from_settings()
+    assert dk_cfg.max_qb_exposure == 0.45
+    assert dk_cfg.max_rb_exposure == 0.55
+    assert dk_cfg.max_wr_exposure == 0.65
+    assert dk_cfg.max_te_exposure == 0.35
+    assert dk_cfg.max_def_exposure == 0.25
+    assert dk_cfg.max_exposure == 0.75
+
+    # 3. DraftKings-specific prefix overrides generic DFS_ variables
+    monkeypatch.setenv("DFS_DK_MAX_QB_EXPOSURE", "0.30")
+    monkeypatch.setenv("DFS_DK_MAX_RB_EXPOSURE", "0.40")
+    monkeypatch.setenv("DFS_DK_MAX_WR_EXPOSURE", "0.50")
+    monkeypatch.setenv("DFS_DK_MAX_TE_EXPOSURE", "0.20")
+    monkeypatch.setenv("DFS_DK_MAX_DST_EXPOSURE", "0.15")
+    monkeypatch.setenv("DFS_DK_MAX_EXPOSURE", "0.60")
+
+    dk_cfg2 = DraftKingsConfig.from_settings()
+    assert dk_cfg2.max_qb_exposure == 0.30
+    assert dk_cfg2.max_rb_exposure == 0.40
+    assert dk_cfg2.max_wr_exposure == 0.50
+    assert dk_cfg2.max_te_exposure == 0.20
+    assert dk_cfg2.max_def_exposure == 0.15
+    assert dk_cfg2.max_exposure == 0.60
+
