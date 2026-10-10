@@ -79,11 +79,13 @@ def find_projections_csv(
             Path("data/week-05/sunday-night/projections.csv"),
             Path("data/week-05/monday-night/projections.csv"),
         ]
+        if slate:
+            candidates = [c for c in candidates if c.parent.name == slate]
         for c in candidates:
             if c.exists():
                 return c
 
-    if not norm_week and not slate_date:
+    if not norm_week and not slate_date and not slate:
         proj_dir = Path("data/projections")
         if proj_dir.is_dir():
             csv_files = [
