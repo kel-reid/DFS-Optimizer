@@ -115,10 +115,10 @@ DraftKings runs against player salary and contest template files (either in `dat
 # Run DraftKings with automatic template fee detection
 python src/build_draftkings_lineups.py
 
-# Run with explicit file paths and simulation parameters:
+# Run with explicit file paths and simulation parameters (also accepts --salaries-csv and --entries-csv):
 python src/build_draftkings_lineups.py \
-  --salaries-csv data/players/DKSalaries.csv \
-  --entries-csv data/templates/DKEntries.csv \
+  --players-csv data/players/DKSalaries.csv \
+  --template-csv data/templates/DKEntries.csv \
   --num-candidates 500 \
   --num-trials 5000 \
   --entry-fee 3.00

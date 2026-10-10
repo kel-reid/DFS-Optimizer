@@ -169,7 +169,11 @@ class DraftKingsDataLoader:
 
         if self.config.projections_csv and self.config.projections_csv.exists():
             from src.data.projections import apply_forward_projections
-            apply_forward_projections(optimizer, self.config.projections_csv)
+            apply_forward_projections(
+                optimizer,
+                self.config.projections_csv,
+                zero_unprojected=self.config.zero_unprojected,
+            )
 
         # Filter backup QBs
         backup_qbs = set(self.config.backup_quarterbacks or ())
@@ -548,15 +552,34 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         description="DraftKings NFL Classic Quantitative Monte Carlo Simulation & Optimization Engine",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--players-csv", type=Path, default=None)
-    parser.add_argument("--template-csv", type=Path, default=None)
+    parser.add_argument(
+        "--players-csv",
+        "--salaries-csv",
+        dest="players_csv",
+        type=Path,
+        default=None,
+        help="DraftKings player salaries CSV file",
+    )
+    parser.add_argument(
+        "--template-csv",
+        "--entries-csv",
+        dest="template_csv",
+        type=Path,
+        default=None,
+        help="DraftKings contest entry template CSV file",
+    )
     parser.add_argument("--projections-csv", type=Path, default=None, help="External projections CSV file")
     parser.add_argument("--output-csv", type=Path, default=None)
     parser.add_argument("--num-candidates", type=int, default=default_cfg.num_candidates)
     parser.add_argument("--num-field", type=int, default=default_cfg.num_field_lineups)
     parser.add_argument("--num-trials", type=int, default=default_cfg.num_sim_trials)
     parser.add_argument("--num-lineups", type=int, default=default_cfg.num_selected_lineups)
-    parser.add_argument("--entry-fee", type=float, default=default_cfg.entry_fee, help="Contest entry fee in dollars")
+    parser.add_argument(
+        "--entry-fee",
+        type=float,
+        default=None,
+        help="Contest entry fee in dollars (default: auto-detect from template)",
+    )
     parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
     parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)
     parser.add_argument("--max-rb-exposure", type=float, default=default_cfg.max_rb_exposure)
@@ -572,7 +595,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     parser.add_argument("--zero-unprojected", action="store_true", default=default_cfg.zero_unprojected)
     parser.add_argument("--keep-unprojected", action="store_true", default=False)
 
-    args, _ = parser.parse_known_args()
+    args = parser.parse_args()
 
     players_path = find_dk_players_csv(args.players_csv)
     template_path = find_dk_template_csv(args.template_csv)

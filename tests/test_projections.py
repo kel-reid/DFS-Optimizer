@@ -77,5 +77,37 @@ def test_apply_forward_projections(mock_fanduel_files, mock_projections_csv):
     assert player_dict_zeroed.get("PHI QB1") == 0.0
 
 
+def test_apply_forward_projections_draftkings_dst(tmp_path: Path):
+    """Verifies DraftKings defenses with position DST correctly match team defense projections."""
+    proj_path = tmp_path / "dk_projections.csv"
+    proj_path.write_text(
+        "player,team,pos,fantasy\n"
+        "Josh Allen,BUF,QB,26.0\n"
+        "Bills D/ST,BUF,DST,11.5\n"
+    )
+
+    optimizer = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
+    salaries_csv = tmp_path / "DKSalaries.csv"
+    salaries_csv.write_text(
+        "Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame\n"
+        "QB,Josh Allen (1001),Josh Allen,1001,QB,8000,BUF@KC,BUF,22.0\n"
+        "DST,Bills  (1002),Bills ,1002,DST,3500,BUF@KC,BUF,6.0\n"
+        "DST,Chiefs  (1003),Chiefs ,1003,DST,3000,BUF@KC,KC,5.0\n"
+    )
+    optimizer.load_players_from_csv(str(salaries_csv))
+
+    updated, unprojected = apply_forward_projections(optimizer, proj_path, zero_unprojected=True)
+
+    assert updated == 2
+    assert unprojected == 1
+
+    player_dict = {p.full_name.strip(): p.fppg for p in optimizer.player_pool.all_players}
+    assert player_dict.get("Josh Allen") == 26.0
+    assert player_dict.get("Bills") == 11.5
+    # Chiefs was not in projections, so with zero_unprojected=True it should be 0.0
+    assert player_dict.get("Chiefs") == 0.0
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+

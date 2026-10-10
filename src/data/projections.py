@@ -154,7 +154,7 @@ def apply_forward_projections(
     untouched_count = 0
 
     for player in optimizer.player_pool.all_players:
-        is_def = "D" in player.positions or player.positions == ["D"]
+        is_def = "D" in player.positions or "DST" in player.positions or player.positions in (["D"], ["DST"])
         if is_def:
             d_key = normalize_name(player.full_name)
             t_key = normalize_name(player.team) if player.team else ""

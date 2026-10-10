@@ -27,6 +27,7 @@ from src.build_draftkings_lineups import (
     DraftKingsConfig,
     DraftKingsPortfolioAuditor,
     DraftKingsTemplateExporter,
+    parse_dk_arguments,
 )
 from src.config import BaseOptimizerConfig, detect_entry_fee
 from src.engine import (
@@ -263,3 +264,36 @@ def test_draftkings_config_aliases_and_sync() -> None:
     # Mutate through alias name
     cfg.num_lineups = 50
     assert cfg.num_selected_lineups == 50
+
+
+def test_draftkings_cli_parsing_aliases_and_fee_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that parse_dk_arguments correctly processes aliases and auto-detects entry fees."""
+    salaries_csv = tmp_path / "DKSalaries.csv"
+    salaries_csv.write_text("Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame\n")
+    template_csv = tmp_path / "DKEntries.csv"
+    template_csv.write_text("Entry ID,Contest ID,Contest Name,Entry Fee\n1,100,Test Contest,$25.00\n")
+
+    # 1. Test alias flags --salaries-csv and --entries-csv with omitted --entry-fee
+    test_args = [
+        "build_draftkings_lineups.py",
+        "--salaries-csv", str(salaries_csv),
+        "--entries-csv", str(template_csv),
+    ]
+    monkeypatch.setattr("sys.argv", test_args)
+    cfg = parse_dk_arguments()
+
+    assert cfg.players_csv == salaries_csv
+    assert cfg.template_csv == template_csv
+    assert cfg.entry_fee == 25.0  # Auto-detected from $25.00 in template
+
+    # 2. Test explicit --entry-fee override
+    test_args_override = [
+        "build_draftkings_lineups.py",
+        "--players-csv", str(salaries_csv),
+        "--template-csv", str(template_csv),
+        "--entry-fee", "5.0",
+    ]
+    monkeypatch.setattr("sys.argv", test_args_override)
+    cfg_override = parse_dk_arguments()
+    assert cfg_override.entry_fee == 5.0
+
