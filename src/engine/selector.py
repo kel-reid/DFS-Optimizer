@@ -17,7 +17,7 @@ from typing import Dict, List, Sequence, Set
 import numpy as np
 from pydfs_lineup_optimizer import Lineup, Player
 
-from src.config import SimOptimizerConfig
+from src.config import BaseOptimizerConfig
 
 logger = logging.getLogger("FanDuelSimOptimizer")
 
@@ -28,7 +28,7 @@ class PortfolioSelector:
     maximizing expected Simulated ROI while strictly enforcing global exposure caps.
     """
 
-    def __init__(self, config: SimOptimizerConfig) -> None:
+    def __init__(self, config: BaseOptimizerConfig) -> None:
         self.config = config
 
     def select_portfolio(
@@ -61,7 +61,7 @@ class PortfolioSelector:
 
         def get_cap(player: Player) -> int:
             pos = set(player.positions)
-            if "D" in pos:
+            if "D" in pos or "DST" in pos:
                 cap_rate = self.config.max_def_exposure
                 if is_single_game and cap_rate == classic_def_default:
                     cap_rate = sg_default_cap
@@ -157,7 +157,7 @@ class SimAuditReporter:
     @staticmethod
     def audit_and_report(
         lineups: Sequence[Lineup],
-        config: SimOptimizerConfig,
+        config: BaseOptimizerConfig,
         players: List[Player],
         sim_roi: np.ndarray,
         win_counts: np.ndarray,
@@ -185,9 +185,9 @@ class SimAuditReporter:
         for l in lineups:
             p_list = l.lineup
             qb = next((p for p in p_list if "QB" in p.positions), None)
-            defs = [p for p in p_list if "D" in p.positions]
+            defs = [p for p in p_list if ("D" in p.positions or "DST" in p.positions)]
             wr_te_teams = {p.team for p in p_list if ("WR" in p.positions or "TE" in p.positions)}
-            off_teams = {p.team for p in p_list if "D" not in p.positions}
+            off_teams = {p.team for p in p_list if ("D" not in p.positions and "DST" not in p.positions)}
 
             if sum(p.salary for p in p_list) <= config.salary_cap:
                 salary_compliant += 1
@@ -211,7 +211,7 @@ class SimAuditReporter:
         # Evaluate exposure cap compliance across all rostered players
         def get_pos_cap(p: Player) -> int:
             pos = set(p.positions)
-            if "D" in pos:
+            if "D" in pos or "DST" in pos:
                 cap_rate = config.max_def_exposure
                 if is_single_game and cap_rate == classic_def_default:
                     cap_rate = sg_default_cap

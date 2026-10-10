@@ -92,8 +92,8 @@ def parse_arguments() -> SimOptimizerConfig:
     parser.add_argument(
         "--entry-fee",
         type=float,
-        default=default_cfg.entry_fee,
-        help="Contest entry fee in dollars.",
+        default=None,
+        help="Contest entry fee in dollars (default: auto-detect from template).",
     )
     parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
     parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)

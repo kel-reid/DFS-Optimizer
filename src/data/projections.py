@@ -119,9 +119,23 @@ def apply_forward_projections(
     def_map: Dict[str, float] = {}
 
     has_first_last = "first_name" in proj_df.columns and "last_name" in proj_df.columns
-    player_col = "player" if "player" in proj_df.columns else "Player" if "Player" in proj_df.columns else None
-    team_col = "team" if "team" in proj_df.columns else "Team" if "Team" in proj_df.columns else None
-    pos_col = "position" if "position" in proj_df.columns else "Position" if "Position" in proj_df.columns else None
+    player_col = None
+    for cand in ["player", "Player", "name", "Name", "player_name", "Player_Name"]:
+        if cand in proj_df.columns:
+            player_col = cand
+            break
+
+    team_col = None
+    for cand in ["team", "Team", "team_abbrev", "TeamAbbrev", "TEAM", "Team_Abbrev"]:
+        if cand in proj_df.columns:
+            team_col = cand
+            break
+
+    pos_col = None
+    for cand in ["position", "Position", "pos", "Pos", "POS"]:
+        if cand in proj_df.columns:
+            pos_col = cand
+            break
 
     for _, row in proj_df.iterrows():
         if has_first_last:
@@ -134,19 +148,22 @@ def apply_forward_projections(
             p_val = ""
 
         t_val = str(row[team_col]).strip() if team_col and pd.notna(row[team_col]) else ""
-        pos_val = str(row[pos_col]).strip() if pos_col and pd.notna(row[pos_col]) else ""
+        pos_val = str(row[pos_col]).strip().upper() if pos_col and pd.notna(row[pos_col]) else ""
 
         try:
             val = float(row[score_col]) if pd.notna(row[score_col]) else 0.0
         except (ValueError, TypeError):
             val = 0.0
 
-        if pos_val in ("DEF", "DST", "D") or p_val.endswith("D/ST") or "D/ST" in p_val:
+        is_defense = pos_val in ("DEF", "DST", "D") or p_val.endswith("D/ST") or "D/ST" in p_val
+        if is_defense:
             if t_val:
                 def_map[normalize_name(t_val)] = val
-            clean_team = p_val.replace("D/ST", "").strip()
+            clean_team = p_val.replace("D/ST", "").replace("DST", "").replace("DEF", "").strip()
             if clean_team:
                 def_map[normalize_name(clean_team)] = val
+            if p_val:
+                def_map[normalize_name(p_val)] = val
         else:
             player_map[normalize_name(p_val)] = val
 
@@ -154,7 +171,7 @@ def apply_forward_projections(
     untouched_count = 0
 
     for player in optimizer.player_pool.all_players:
-        is_def = "D" in player.positions or player.positions == ["D"]
+        is_def = "D" in player.positions or "DST" in player.positions or player.positions in (["D"], ["DST"])
         if is_def:
             d_key = normalize_name(player.full_name)
             t_key = normalize_name(player.team) if player.team else ""

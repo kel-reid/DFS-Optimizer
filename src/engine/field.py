@@ -15,7 +15,7 @@ from typing import List
 import numpy as np
 from pydfs_lineup_optimizer import Player
 
-from src.config import SimOptimizerConfig
+from src.config import BaseOptimizerConfig
 
 logger = logging.getLogger("FanDuelSimOptimizer")
 
@@ -29,7 +29,7 @@ class OpponentFieldSimulator:
     Encodes the field into binary NumPy matrix F in {0, 1}^(10000 x P).
     """
 
-    def __init__(self, players: List[Player], config: SimOptimizerConfig) -> None:
+    def __init__(self, players: List[Player], config: BaseOptimizerConfig) -> None:
         self.players = players
         self.config = config
         self.P = len(players)
@@ -53,7 +53,7 @@ class OpponentFieldSimulator:
                 self.wr_indices.append(idx)
             elif "TE" in pos:
                 self.te_indices.append(idx)
-            elif "D" in pos:
+            elif "D" in pos or "DST" in pos:
                 self.def_indices.append(idx)
 
         self.flex_indices = self.rb_indices + self.wr_indices + self.te_indices
@@ -277,7 +277,8 @@ class OpponentFieldSimulator:
 
             # Vectorized salary evaluation: sum salaries across the 9 players
             roster_salaries = np.sum(salaries[rosters], axis=1)
-            valid_salary_mask = (roster_salaries >= self.config.min_field_salary) & (roster_salaries <= self.config.salary_cap)
+            min_sal = min(self.config.min_field_salary, int(self.config.salary_cap * 0.97))
+            valid_salary_mask = (roster_salaries >= min_sal) & (roster_salaries <= self.config.salary_cap)
 
             valid_rosters = rosters[valid_salary_mask]
             if len(valid_rosters) > 0:

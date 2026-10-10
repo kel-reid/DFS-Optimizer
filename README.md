@@ -13,9 +13,12 @@ The engine automatically inspects file name signatures in `data/templates/`, `da
 ## Strategic & Quantitative Constraints
 
 1. **Roster Architecture & Salary Cap**:
-   * **FanDuel**: 9 players (`QB, RB, RB, WR, WR, WR, TE, FLEX, DEF`) under **$60,000** salary cap.
-   * **DraftKings**: 9 players (`QB, RB, RB, WR, WR, WR, TE, FLEX, DST`) under **$50,000** salary cap.
-   * Enforces league diversity rules (players from >= 3 distinct NFL teams, <= 4 players from any single team).
+   * **Classic Formats**:
+     * **FanDuel Classic**: 9 players (`QB, RB, RB, WR, WR, WR, TE, FLEX, DEF`) under **$60,000** salary cap (players from $\ge 3$ teams).
+     * **DraftKings Classic**: 9 players (`QB, RB, RB, WR, WR, WR, TE, FLEX, DST`) under **$50,000** salary cap (players from $\ge 2$ teams).
+   * **Single Game / Showdown Formats**:
+     * **FanDuel Single Game**: 5 players (1 `MVP` at $1.5\times$ scoring multiplier + 4 `AnyFLEX`) under **$60,000** salary cap.
+     * **DraftKings Showdown**: 6 players (1 `CPT` at $1.5\times$ salary and scoring multiplier + 5 `FLEX`) under **$50,000** salary cap.
 
 2. **Primary Correlation Stacking (80 / 20 Allocation)**:
    * **Phase 1 (80% / 120 lineups)**: Enforces QB + >= 1 Pass Catcher (`WR` or `TE`) from the same franchise using `PositionsStack`.
@@ -47,7 +50,10 @@ The engine automatically inspects file name signatures in `data/templates/`, `da
      * **Top 1.0%** (High equity tier): **20x** entry fee
      * **Top 5.0%** (Mid cash tier): **5x** entry fee
      * **Top 20.0%** (Min-cash line): **1.5x** entry fee
-   * CLI `--entry-fee` parameter (default: 0.05) makes Sim ROI calculation adaptable to any buy-in level.
+   * **Contest-Agnostic Entry Fee Resolution**:
+     * Automatically auto-detects entry fee from template CSV column headers (`Entry Fee`, `entry_fee`, `Fee`).
+     * Supports environment variable overrides (`DFS_ENTRY_FEE`, `DFS_DK_ENTRY_FEE`) and CLI `--entry-fee` flag.
+     * Defaults to a neutral **$1.00** baseline if unstated, allowing seamless scaling across any buy-in tier ($0.05 micro-stakes to $100+ high-stakes).
 
 ## Simulation Dimensions: N = 500, T = 5,000, K = 150
 
@@ -79,31 +85,59 @@ pip install -r requirements.txt
 
 ### 2. Running the Optimizer
 
-Contest slates are organized into self-contained directories under `data/week-05/<slate>/ (or data/week-<XX>/<slate>/)`:
-- `players.csv` (or vendor player list)
-- `entries_template.csv` (FanDuel / DraftKings upload template)
+Both FanDuel and DraftKings share the unified 4-stage Monte Carlo optimization and simulation pipeline (`CandidatePoolGenerator` $\to$ `OpponentFieldSimulator` $\to$ `CorrelatedGameEngine` $\to$ `PortfolioSelector`).
+
+#### FanDuel Execution
+
+Contest slates are organized into directories under `data/week-<XX>/<slate>/`:
+- `players.csv` (FanDuel player list)
+- `entries_template.csv` (FanDuel contest template)
 - `projections.csv` (External forward-looking projections)
 
-Then launch by specifying the target slate:
 ```bash
-# Run for a specific slate (e.g. Sunday Night Showdown)
+# Run for a specific slate (e.g. Sunday Night Single Game)
 python src/build_fanduel_lineups.py --week 5 --slate sunday-night
 
 # Run for Main Slate
 python src/build_fanduel_lineups.py --week 5 --slate main-slate
 
 # Or run with custom simulation parameters:
-python src/build_fanduel_lineups.py --week 5 --slate sunday-night --entry-fee 0.05 --num-candidates 500 --num-trials 5000
+python src/build_fanduel_lineups.py --week 5 --slate sunday-night --entry-fee 1.00 --num-candidates 500 --num-trials 5000
 ```
 
-The completed upload CSV will be written to `data/week-05/<slate>/ (or data/week-<XX>/<slate>/)completed_lineups.csv`.
+*Completed lineup file is written to `data/week-<XX>/<slate>/completed_lineups.csv`.*
 
-## Running Automated Tests
+#### DraftKings Execution
 
-Run the test suite with pytest:
+DraftKings runs against player salary and contest template files (either in `data/players/` and `data/templates/` or a custom slate path):
 
 ```bash
-# Run all tests
-pytest tests/ -v
+# Run DraftKings with automatic template fee detection
+python src/build_draftkings_lineups.py
+
+# Run with explicit file paths and simulation parameters (also accepts --salaries-csv and --entries-csv):
+python src/build_draftkings_lineups.py \
+  --players-csv data/players/DKSalaries.csv \
+  --template-csv data/templates/DKEntries.csv \
+  --num-candidates 500 \
+  --num-trials 5000 \
+  --entry-fee 3.00
+```
+
+*Completed lineup file is written to `data/output/Completed-DKEntries.csv`.*
+
+## Quality Verification & Tests
+
+Run the full automated test suite, linter, and type checker:
+
+```bash
+# Run all unit and integration tests
+.venv/bin/pytest -v
+
+# Run linter
+ruff check .
+
+# Run static type checker
+mypy src tests
 ```
 
