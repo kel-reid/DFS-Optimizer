@@ -6,8 +6,6 @@
 
 A quantitative optimization and Monte Carlo simulation engine for generating high-equity tournament portfolios for FanDuel and DraftKings NFL DFS contests.
 
-Powered by `pydfs-lineup-optimizer` (PuLP / CBC integer linear programming backend), `numpy`, and `pandas`.
-
 > **Key DFS Concepts**:
 > * **MME (Mass Multi-Entry)**: Generating a coordinated portfolio of 150 lineups to capture ceiling outcomes in 150-max contests.
 > * **GPP (Guaranteed Prize Pool)**: Large-field, top-heavy tournament payout structures where high percentiles (top 0.01%–1.0%) capture the majority of prize equity.
@@ -80,7 +78,7 @@ The Monte Carlo simulation pipeline parameterizes scale across four distinct mat
    * Strictly prohibits rostering defensive units (`DEF` / `DST`) with opposing offensive skill players (`QB`, `RB`, `WR`, `TE`) using `restrict_positions_for_opposing_team`.
 
 4. **Lineup Uniqueness**:
-   * Enforces `max_repeating_players = 6`, guaranteeing that every lineup in the 150-entry portfolio differs by at least **3 unique players** from every other lineup.
+   * For 9-player Classic formats, enforcing `max_repeating_players = 6` guarantees that every lineup in the 150-entry portfolio differs by at least **3 unique players** from every other lineup.
 
 5. **Pre-Solve Injury & Backup QB Filter**:
    * Prunes confirmed `IR`, `O`, `D`, and `PUP` players while retaining active and Questionable (`Q`) starters.
@@ -143,7 +141,7 @@ draftkings:
     num_selected_lineups: 150
 ```
 
-All configuration values can be overridden via environment variables (e.g. `DFS_ENTRY_FEE`, `DFS_BACKUP_QUARTERBACKS`, `DFS_DK_SALARY_CAP`).
+Supported configuration parameters can be overridden via environment variables (e.g. `DFS_SALARY_CAP`, `DFS_MIN_FIELD_SALARY`, `DFS_ENTRY_FEE`, `DFS_NUM_CANDIDATES`, `DFS_NUM_FIELD`, `DFS_NUM_TRIALS`, `DFS_NUM_LINEUPS`, `DFS_MAX_QB_EXPOSURE`, `DFS_MAX_DEF_EXPOSURE`, `DFS_BACKUP_QUARTERBACKS`, and corresponding `DFS_DK_*` variables).
 
 ---
 
@@ -202,7 +200,7 @@ python src/build_fanduel_lineups.py --week 5 --slate sunday-night
 # Run Main Slate with explicit simulation parameters
 python src/build_fanduel_lineups.py --week 5 --slate main-slate --num-candidates 500 --num-trials 5000 --entry-fee 1.00
 ```
-*Export destination: `data/week-<XX>/<slate>/completed_lineups.csv`.*
+*Export destination: `data/week-<XX>/<slate>/completed_lineups.csv` when that slate directory exists; otherwise `data/output/<slate>/Completed-<template filename>`.*
 
 #### DraftKings Direct Execution
 
