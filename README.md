@@ -181,7 +181,7 @@ python run_optimizer.py --ui
 ./run_optimizer --ui
 ```
 
-* **Drag-and-Drop Ingestion**: Drop `DKSalaries.csv` (or FanDuel `players.csv`) and `DKEntries.csv` directly from your browser's `Downloads` folder.
+* **Drag-and-Drop Ingestion**: Drop `DKSalaries.csv` (or FanDuel `players.csv`), `DKEntries.csv`, and forward projections CSV (`projections.csv` or `rotowire-*.csv`) directly from your browser's `Downloads` folder.
 * **Auto-Detection**: Automatically identifies the platform (DraftKings vs. FanDuel), format (Classic vs. Single Game / Showdown), entry fee, and reserved entries count.
 * **Visual Exposure Controls**: Sliders for target lineup volume ($K$), primary stack ratio ($80\%$), and position exposure ceilings ($25\%$ QB, $25\%$ Skill, $20\%$ DEF).
 * **Live Simulation Telemetry**: Real-time progress across all 4 simulation stages with streaming terminal logs.

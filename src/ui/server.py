@@ -10,6 +10,7 @@ drag-and-drop web interface for generating FanDuel and DraftKings DFS lineups.
 from __future__ import annotations
 
 import csv
+import errno
 import io
 import json
 import logging
@@ -147,12 +148,18 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
         players_content = payload.get("players_content", "")
         template_content = payload.get("template_content", "")
         projections_content = payload.get("projections_content", "")
-        template_filename = payload.get("template_filename", "DKEntries.csv")
+        raw_name = str(payload.get("template_filename") or "DKEntries.csv")
+        template_filename = Path(raw_name).name or "DKEntries.csv"
+        if not template_filename.lower().endswith(".csv"):
+            template_filename += ".csv"
         options = payload.get("options", {})
 
         players_file = temp_dir / "players.csv"
         template_file = temp_dir / template_filename
         output_file = temp_dir / f"Completed-{template_filename}"
+
+        if not template_file.resolve().is_relative_to(temp_dir.resolve()) or not output_file.resolve().is_relative_to(temp_dir.resolve()):
+            raise ValueError("Invalid template filename.")
 
         players_file.write_text(players_content, encoding="utf-8")
         template_file.write_text(template_content, encoding="utf-8")
@@ -177,6 +184,12 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
         num_trials = int(options.get("num_trials", 5000))
         entry_fee = float(options.get("entry_fee", 1.0))
         stack_ratio = float(options.get("stack_ratio", 0.80))
+        raw_game_stack_ratio = options.get("game_stack_ratio")
+        if raw_game_stack_ratio is not None:
+            game_stack_ratio = float(raw_game_stack_ratio)
+        else:
+            game_stack_ratio = min(0.40, stack_ratio)
+        game_stack_ratio = min(game_stack_ratio, stack_ratio)
         max_qb_exposure = float(options.get("max_qb_exposure", 0.25))
         max_rb_exposure = float(options.get("max_rb_exposure", 0.25))
         max_wr_exposure = float(options.get("max_wr_exposure", 0.25))
@@ -202,6 +215,7 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
                 num_selected_lineups=num_lineups,
                 entry_fee=entry_fee,
                 stack_ratio=stack_ratio,
+                game_stack_ratio=game_stack_ratio,
                 max_qb_exposure=max_qb_exposure,
                 max_rb_exposure=max_rb_exposure,
                 max_wr_exposure=max_wr_exposure,
@@ -228,6 +242,7 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
                 num_selected_lineups=num_lineups,
                 entry_fee=entry_fee,
                 stack_ratio=stack_ratio,
+                game_stack_ratio=game_stack_ratio,
                 max_qb_exposure=max_qb_exposure,
                 max_rb_exposure=max_rb_exposure,
                 max_wr_exposure=max_wr_exposure,
@@ -333,13 +348,11 @@ class DFSOptimizerHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -395,6 +408,11 @@ class DFSOptimizerHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+
+        content_type = self.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            self.send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Content-Type must be application/json")
+            return
 
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
@@ -484,7 +502,7 @@ def start_ui_server(port: int = 8500, auto_open: bool = True) -> None:
     try:
         httpd = ThreadingHTTPServer(server_address, DFSOptimizerHandler)
     except OSError as err:
-        if err.errno == 48:  # Address already in use
+        if err.errno == errno.EADDRINUSE:
             logger.warning("Port %d already in use, binding to port %d...", port, port + 1)
             port += 1
             server_address = ("127.0.0.1", port)

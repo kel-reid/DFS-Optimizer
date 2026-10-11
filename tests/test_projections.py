@@ -202,6 +202,49 @@ def test_apply_forward_projections_ragged_csv_defense(mock_fanduel_files, tmp_pa
     assert player_dict.get("KC Chiefs") == 8.5
 
 
+def test_ragged_csv_does_not_parse_salary_as_projection(mock_fanduel_files, tmp_path: Path):
+    """Verifies that an unprojected row with salary and trailing blanks does not treat salary as FPPG."""
+    _, players_csv, _, _ = mock_fanduel_files
+    optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+    optimizer.load_players_from_csv(str(players_csv))
+
+    test_proj = tmp_path / "salary_only_proj.csv"
+    test_proj.write_text(
+        "player,salary,fantasy\n"
+        "KC QB1,$7500,\n"
+    )
+
+    updated, untouched = apply_forward_projections(optimizer, test_proj, zero_unprojected=False)
+    player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+    # FPPG must NOT be overwritten by the $7500 salary
+    assert player_dict.get("KC QB1") != 7500.0
+
+
+def test_position_coverage_derived_from_feed_rows(mock_fanduel_files, tmp_path: Path):
+    """Verifies that an explicit position column in feed rows registers coverage even if names do not match."""
+    _, players_csv, _, _ = mock_fanduel_files
+    optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+    optimizer.load_players_from_csv(str(players_csv))
+
+    # Feed covering RB position, but with an unmatched fictional player name
+    rb_feed = tmp_path / "rb_feed.csv"
+    rb_feed.write_text(
+        "player,position,fantasy\n"
+        "Unmatched RB Name,RB,18.0\n"
+    )
+
+    # When zero_unprojected=True, pool RBs should be zeroed out because RB was covered by the feed,
+    # while other positions (QB, WR, TE) retain baseline because they were NOT in the feed!
+    updated, untouched = apply_forward_projections(optimizer, rb_feed, zero_unprojected=True)
+    player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+
+    # Pool RB (unmatched) is zeroed out
+    assert player_dict.get("KC RB1") == 0.0
+    # Pool QB (uncovered position in feed) retains baseline
+    qb_fppg = player_dict.get("KC QB1")
+    assert qb_fppg is not None and qb_fppg > 0.0
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
 

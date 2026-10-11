@@ -309,7 +309,6 @@ class SimOptimizerConfig(BaseOptimizerConfig):
                     date_dir = Path(f"data/{slate_date}/{slate}")
                     if date_dir.is_dir():
                         slate_dir = date_dir
-                slate_dir.mkdir(parents=True, exist_ok=True)
                 params["output_csv"] = slate_dir / "completed_lineups.csv"
 
         return cls(**params)
@@ -560,7 +559,6 @@ class DraftKingsConfig(BaseOptimizerConfig):
                     date_dir = Path(f"data/{slate_date}/{slate}")
                     if date_dir.is_dir():
                         slate_dir = date_dir
-                slate_dir.mkdir(parents=True, exist_ok=True)
                 params["output_csv"] = slate_dir / "completed_lineups.csv"
 
         return cls(**params)

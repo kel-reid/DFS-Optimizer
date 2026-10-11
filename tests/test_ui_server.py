@@ -362,3 +362,78 @@ def test_http_api_optimize_endpoint_success():
         data = json.loads(body.decode("utf-8"))
         assert data["success"] is True
         assert "job_id" in data
+
+
+def test_http_api_optimize_endpoint_requires_json_content_type():
+    """Verifies POST /api/optimize returns 415 Unsupported Media Type when Content-Type is not application/json."""
+    status, _, _ = simulate_request(
+        "POST",
+        "/api/optimize",
+        body=b'{"test": 1}',
+        headers={"Content-Type": "text/plain"},
+    )
+    assert status == 415
+
+
+def test_execute_optimization_job_clamps_game_stack_ratio(tmp_path: Path):
+    """Verifies that lowering stack_ratio in options clamps game_stack_ratio so validation does not fail."""
+    job_id = "test-job-clamped-stack"
+    with _JOBS_LOCK:
+        JOBS[job_id] = {"id": job_id, "status": "queued", "progress": 0, "stage": "Queued", "logs": []}
+
+    mock_out = tmp_path / "mock_completed.csv"
+    mock_out.write_text("Entry ID,Contest ID,QB,RB,RB,WR,WR,WR,TE,FLEX,DST\n1,10,1,2,3,4,5,6,7,8,9\n")
+
+    payload = {
+        "players_content": "Position,Name + ID,Salary\nQB,Josh Allen (1001),8000\n",
+        "template_content": "Entry ID,Contest ID\n1,10\n",
+        "projections_content": "Player,Projection\nJosh Allen,24.5\n",
+        "template_filename": "DKEntries.csv",
+        "platform": "draftkings",
+        "options": {
+            "num_lineups": 1,
+            "stack_ratio": 0.20,  # Below settings default game_stack_ratio of 0.40!
+        },
+    }
+
+    with patch("src.build_draftkings_lineups.run_draftkings_pipeline", return_value=mock_out):
+        _execute_optimization_job(job_id, tmp_path, payload)
+
+    with _JOBS_LOCK:
+        job = JOBS[job_id]
+        # Must succeed and not raise ValueError: Game stack ratio cannot exceed total stack ratio
+        assert job["status"] == "completed"
+
+
+def test_execute_optimization_job_sanitizes_template_filename(tmp_path: Path):
+    """Verifies that a template filename with path traversal characters is sanitized to stay within temp_dir."""
+    job_id = "test-job-traversal"
+    with _JOBS_LOCK:
+        JOBS[job_id] = {"id": job_id, "status": "queued", "progress": 0, "stage": "Queued", "logs": []}
+
+    mock_out = tmp_path / "mock_completed.csv"
+    mock_out.write_text("Entry ID,Contest ID,QB,RB,RB,WR,WR,WR,TE,FLEX,DST\n1,10,1,2,3,4,5,6,7,8,9\n")
+
+    payload = {
+        "players_content": "Position,Name + ID,Salary\nQB,Josh Allen (1001),8000\n",
+        "template_content": "Entry ID,Contest ID\n1,10\n",
+        "projections_content": "Player,Projection\nJosh Allen,24.5\n",
+        "template_filename": "../../../malicious_template.csv",
+        "platform": "draftkings",
+        "options": {
+            "num_lineups": 1,
+        },
+    }
+
+    with patch("src.build_draftkings_lineups.run_draftkings_pipeline", return_value=mock_out):
+        _execute_optimization_job(job_id, tmp_path, payload)
+
+    with _JOBS_LOCK:
+        job = JOBS[job_id]
+        assert job["status"] == "completed"
+        # Output file must remain inside tmp_path
+        out_file = Path(job["output_path"])
+        assert out_file.name == "mock_completed.csv"
+        # Template written during job execution must be sanitized to basename
+        written_template = tmp_path / "malicious_template.csv"
+        assert written_template.exists()

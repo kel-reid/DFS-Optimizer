@@ -325,6 +325,7 @@
         num_lineups: parseInt(numLineupsSlider.value, 10),
         entry_fee: state.inspection ? state.inspection.entry_fee : 1.0,
         stack_ratio: parseFloat(stackRatioSlider.value) / 100,
+        game_stack_ratio: Math.min(0.40, parseFloat(stackRatioSlider.value) / 100),
         max_qb_exposure: parseFloat(maxQbExposureSlider.value) / 100,
         max_rb_exposure: parseFloat(maxSkillExposureSlider.value) / 100,
         max_wr_exposure: parseFloat(maxSkillExposureSlider.value) / 100,
@@ -445,7 +446,8 @@
   // Completion & Results Presentation
   // ---------------------------------------------------------------------------
   function onJobCompleted(jobData) {
-    appendLog('[SUCCESS] 150 tournament lineups generated and validated against all contest invariants.', 'success');
+    const count = (jobData.summary && jobData.summary.num_lineups) || numLineupsSlider.value;
+    appendLog(`[SUCCESS] ${count} tournament lineups generated and validated against all contest invariants.`, 'success');
     updateReadyState();
     engineStatusPill.className = 'status-pill status-ready';
     engineStatusPill.innerHTML = '<span class="pulse-dot"></span> Lineups Ready';
@@ -504,16 +506,33 @@
     exposures.forEach(item => {
       const displayName = cleanPlayerName(item.name);
       const row = document.createElement('tr');
-      row.innerHTML = `
-        <td class="player-name-cell">${escapeHtml(displayName)}</td>
-        <td>${item.count} / ${numLineupsSlider.value}</td>
-        <td><strong>${item.exposure_pct}%</strong></td>
-        <td class="bar-cell">
-          <div class="bar-wrap">
-            <div class="bar-fill" style="width: ${Math.min(100, item.exposure_pct * 3)}%;"></div>
-          </div>
-        </td>
-      `;
+
+      const nameCell = document.createElement('td');
+      nameCell.className = 'player-name-cell';
+      nameCell.textContent = displayName;
+
+      const countCell = document.createElement('td');
+      countCell.textContent = `${item.count} / ${numLineupsSlider.value}`;
+
+      const pctCell = document.createElement('td');
+      const strong = document.createElement('strong');
+      strong.textContent = `${item.exposure_pct}%`;
+      pctCell.appendChild(strong);
+
+      const barCell = document.createElement('td');
+      barCell.className = 'bar-cell';
+      const barWrap = document.createElement('div');
+      barWrap.className = 'bar-wrap';
+      const barFill = document.createElement('div');
+      barFill.className = 'bar-fill';
+      barFill.style.width = `${Math.min(100, item.exposure_pct * 3)}%`;
+      barWrap.appendChild(barFill);
+      barCell.appendChild(barWrap);
+
+      row.appendChild(nameCell);
+      row.appendChild(countCell);
+      row.appendChild(pctCell);
+      row.appendChild(barCell);
       exposuresTableBody.appendChild(row);
     });
   }

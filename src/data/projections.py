@@ -130,6 +130,7 @@ def apply_forward_projections(
 
     player_map: Dict[str, float] = {}
     def_map: Dict[str, float] = {}
+    projected_positions: set[str] = set()
 
     has_first_last = "first_name" in proj_df.columns and "last_name" in proj_df.columns
     player_col = None
@@ -162,6 +163,11 @@ def apply_forward_projections(
 
         t_val = str(row[team_col]).strip() if team_col and pd.notna(row[team_col]) else ""
         pos_val = str(row[pos_col]).strip().upper() if pos_col and pd.notna(row[pos_col]) else ""
+        if pos_val:
+            if pos_val in ("DEF", "DST", "D"):
+                projected_positions.update(["D", "DEF", "DST"])
+            else:
+                projected_positions.add(pos_val)
 
         val = None
         if score_col in row and pd.notna(row[score_col]) and str(row[score_col]).strip() != "":
@@ -171,12 +177,18 @@ def apply_forward_projections(
                 val = None
 
         if val is None:
-            # Fallback for ragged CSV rows (e.g. D/ST and Kicker rows with fewer stat columns than offensive rows)
-            for item in reversed(row.values):
+            # Fallback for ragged CSV rows (e.g. D/ST rows with fewer columns than offensive rows)
+            # Scan trailing columns in reverse, skipping recognized non-projection columns (salary, team, etc.)
+            for col_name, item in zip(reversed(proj_df.columns), reversed(row.values)):
+                col_lower = str(col_name).strip().lower()
+                if any(k in col_lower for k in ("salary", "team", "player", "name", "rank", "game", "date", "id", "pos")):
+                    continue
                 if pd.notna(item) and str(item).strip() != "":
                     try:
-                        val = float(str(item).strip().replace("$", ""))
-                        break
+                        clean_num = float(str(item).strip().replace("$", ""))
+                        if 0.0 <= clean_num <= 100.0:
+                            val = clean_num
+                            break
                     except (ValueError, TypeError):
                         continue
 
@@ -191,6 +203,7 @@ def apply_forward_projections(
             or "DEF" in p_val
         )
         if is_defense:
+            projected_positions.update(["D", "DEF", "DST"])
             if t_val:
                 def_map[normalize_name(t_val)] = val
             clean_team = p_val.replace("D/ST", "").replace("DST", "").replace("DEF", "").strip()
@@ -201,10 +214,7 @@ def apply_forward_projections(
         else:
             player_map[normalize_name(p_val)] = val
 
-    # Track which positions are represented in the projection file to avoid
-    # zeroing out positions completely absent from partial projection feeds
-    # (e.g. RB-only sheets or feeds lacking team defenses).
-    projected_positions: set[str] = set()
+    # Augment projected_positions with positions from matched pool players
     if def_map:
         projected_positions.update(["D", "DEF", "DST"])
 

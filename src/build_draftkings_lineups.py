@@ -419,6 +419,12 @@ class DraftKingsLineupPipeline:
                 if solved_unconstrained == needed_unconstrained:
                     break
 
+        if len(all_lineups) < n:
+            raise ValueError(
+                f"Generated only {len(all_lineups)} / {n} requested lineups. "
+                "Exposure ceilings or uniqueness constraints may be overly restrictive."
+            )
+
         logger.info("Successfully assembled %d total lineups across portfolio.", len(all_lineups))
         return all_lineups
 
