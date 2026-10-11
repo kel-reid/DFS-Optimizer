@@ -151,16 +151,7 @@
     const isReady = hasTemplate && hasPlayers && hasProjections;
 
     btnOptimize.disabled = !isReady;
-    if (isReady) {
-      const k = parseInt(numLineupsSlider.value, 10);
-      btnOptimizeText.textContent = `Optimize & Simulate ${k} Lineups`;
-    } else {
-      const missing = [];
-      if (!hasTemplate) missing.push('Entries Template');
-      if (!hasPlayers) missing.push('Player Salaries');
-      if (!hasProjections) missing.push('Player Projections');
-      btnOptimizeText.textContent = `Upload ${missing.join(', ')} to Optimize`;
-    }
+    btnOptimizeText.textContent = 'Optimize & Generate Lineups';
   }
 
   // ---------------------------------------------------------------------------
@@ -255,11 +246,6 @@
   function updateCapCounts() {
     const k = parseInt(numLineupsSlider.value, 10);
     valNumLineups.textContent = k;
-    if (state.playersFile && state.templateFile && state.projectionsFile) {
-      btnOptimizeText.textContent = `Optimize & Simulate ${k} Lineups`;
-    } else {
-      updateReadyState();
-    }
 
     const qbCap = parseFloat(maxQbExposureSlider.value) / 100;
     qbMaxCount.textContent = Math.floor(k * qbCap);
@@ -296,13 +282,7 @@
     valMaxRepeating.textContent = e.target.value;
   });
 
-  // Collapsible toggle
-  const configHeader = document.getElementById('config-toggle-header');
-  const configContent = document.getElementById('config-content');
-  configHeader.addEventListener('click', () => {
-    const isHidden = configContent.classList.toggle('hidden');
-    configHeader.querySelector('.toggle-icon').textContent = isHidden ? '▶' : '▼';
-  });
+
 
   btnClearLogs.addEventListener('click', () => {
     logConsole.innerHTML = '';
