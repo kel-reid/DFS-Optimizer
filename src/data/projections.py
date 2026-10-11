@@ -130,6 +130,7 @@ def apply_forward_projections(
 
     player_map: Dict[str, float] = {}
     def_map: Dict[str, float] = {}
+    projected_positions: set[str] = set()
 
     has_first_last = "first_name" in proj_df.columns and "last_name" in proj_df.columns
     player_col = None
@@ -162,14 +163,47 @@ def apply_forward_projections(
 
         t_val = str(row[team_col]).strip() if team_col and pd.notna(row[team_col]) else ""
         pos_val = str(row[pos_col]).strip().upper() if pos_col and pd.notna(row[pos_col]) else ""
+        if pos_val:
+            if pos_val in ("DEF", "DST", "D"):
+                projected_positions.update(["D", "DEF", "DST"])
+            else:
+                projected_positions.add(pos_val)
 
-        try:
-            val = float(row[score_col]) if pd.notna(row[score_col]) else 0.0
-        except (ValueError, TypeError):
+        val = None
+        if score_col in row and pd.notna(row[score_col]) and str(row[score_col]).strip() != "":
+            try:
+                val = float(str(row[score_col]).strip().replace("$", ""))
+            except (ValueError, TypeError):
+                val = None
+
+        if val is None:
+            # Fallback for ragged CSV rows (e.g. D/ST rows with fewer columns than offensive rows)
+            # Scan trailing columns in reverse, skipping recognized non-projection columns (salary, team, etc.)
+            for col_name, item in zip(reversed(proj_df.columns), reversed(row.values)):
+                col_lower = str(col_name).strip().lower()
+                if any(k in col_lower for k in ("salary", "team", "player", "name", "rank", "game", "date", "id", "pos")):
+                    continue
+                if pd.notna(item) and str(item).strip() != "":
+                    try:
+                        clean_num = float(str(item).strip().replace("$", ""))
+                        if 0.0 <= clean_num <= 100.0:
+                            val = clean_num
+                            break
+                    except (ValueError, TypeError):
+                        continue
+
+        if val is None:
             val = 0.0
 
-        is_defense = pos_val in ("DEF", "DST", "D") or p_val.endswith("D/ST") or "D/ST" in p_val
+        is_defense = (
+            pos_val in ("DEF", "DST", "D")
+            or p_val.endswith("D/ST")
+            or "D/ST" in p_val
+            or "DST" in p_val
+            or "DEF" in p_val
+        )
         if is_defense:
+            projected_positions.update(["D", "DEF", "DST"])
             if t_val:
                 def_map[normalize_name(t_val)] = val
             clean_team = p_val.replace("D/ST", "").replace("DST", "").replace("DEF", "").strip()
@@ -180,8 +214,18 @@ def apply_forward_projections(
         else:
             player_map[normalize_name(p_val)] = val
 
+    # Augment projected_positions with positions from matched pool players
+    if def_map:
+        projected_positions.update(["D", "DEF", "DST"])
+
+    for player in optimizer.player_pool.all_players:
+        if normalize_name(player.full_name) in player_map:
+            projected_positions.update(player.positions)
+
     updated_count = 0
     untouched_count = 0
+
+    def_covered = bool(def_map or any(p in projected_positions for p in ("D", "DEF", "DST")))
 
     for player in optimizer.player_pool.all_players:
         is_def = "D" in player.positions or "DST" in player.positions or player.positions in (["D"], ["DST"])
@@ -196,7 +240,8 @@ def apply_forward_projections(
                     found = True
                     break
             if not found:
-                if zero_unprojected:
+                # Only zero out if the projection file actually provided defensive projections
+                if zero_unprojected and def_covered:
                     player.fppg = 0.0
                 untouched_count += 1
         else:
@@ -205,7 +250,9 @@ def apply_forward_projections(
                 player.fppg = player_map[k]
                 updated_count += 1
             else:
-                if zero_unprojected:
+                pos_covered = any(pos in projected_positions for pos in player.positions)
+                # Only zero out if this player's position was covered in the projection file
+                if zero_unprojected and pos_covered:
                     player.fppg = 0.0
                 untouched_count += 1
 

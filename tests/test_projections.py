@@ -154,6 +154,97 @@ def test_find_projections_csv_no_cross_slate_leakage(tmp_path: Path, monkeypatch
     assert res_sn_found == Path("data/week-05/sunday-night/projections.csv")
 
 
+def test_apply_forward_projections_partial_feed(mock_fanduel_files, tmp_path: Path):
+    """Verifies that an RB-only partial projection feed updates RBs but does not zero out unprojected positions."""
+    _, players_csv, _, _ = mock_fanduel_files
+    optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+    optimizer.load_players_from_csv(str(players_csv))
+
+    # Partial projection file with only RB projections
+    partial_proj = tmp_path / "rb_only_projections.csv"
+    partial_proj.write_text(
+        "player,fantasy\n"
+        "KC RB1,25.0\n"
+    )
+
+    # Even with zero_unprojected=True, positions not covered (like QB and DEF) must retain baseline FPPG!
+    updated, untouched = apply_forward_projections(optimizer, partial_proj, zero_unprojected=True)
+    assert updated == 1
+
+    player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+    assert player_dict.get("KC RB1") == 25.0
+    # KC RB2 was an unprojected RB, so it gets zeroed
+    assert player_dict.get("KC RB2") == 0.0
+    # KC QB1 was not covered in the projection file at all, so it retains its baseline FPPG (20.0)!
+    assert player_dict.get("KC QB1") == 20.0
+    # Defense was not in the projection file, so it retains baseline FPPG (8.0)!
+    assert player_dict.get("KC Chiefs") == 8.0
+
+
+def test_apply_forward_projections_ragged_csv_defense(mock_fanduel_files, tmp_path: Path):
+    """Verifies that ragged CSV rows (where DEF rows have fewer columns than offensive players) parse fantasy projections correctly."""
+    _, players_csv, _, _ = mock_fanduel_files
+    optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+    optimizer.load_players_from_csv(str(players_csv))
+
+    # Ragged CSV where offensive players have 20 columns, but D/ST has 14 columns ending in "8.5,,"
+    ragged_proj = tmp_path / "ragged_projections.csv"
+    ragged_proj.write_text(
+        "player,team,gameInfo,salary,value,completionsAttempts,passingYards,passingTouchdowns,interceptionsThrown,rushingAttempts,rushingYards,rushingTouchdowns,receptions,targets,receivingYards,receivingTouchdowns,fantasy,positionRank,overallRank,opponentDefensiveRank\n"
+        "KC QB1,KC,KC @ BUF,$7500,2.5,24.0/35.0,280.0,2.0,0.5,1.5,5.0,0.1,0,0,0,0,24.5,,,\n"
+        "KC D/ST,Chiefs,KC @ BUF,$4000,1.5,20.0,300.0,1.0,0.5,0.3,0.1,8.5,,\n"
+    )
+
+    updated, untouched = apply_forward_projections(optimizer, ragged_proj, zero_unprojected=True)
+    player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+    assert player_dict.get("KC QB1") == 24.5
+    # Defense projection was parsed from the last non-empty token (8.5) despite ragged column alignment!
+    assert player_dict.get("KC Chiefs") == 8.5
+
+
+def test_ragged_csv_does_not_parse_salary_as_projection(mock_fanduel_files, tmp_path: Path):
+    """Verifies that an unprojected row with salary and trailing blanks does not treat salary as FPPG."""
+    _, players_csv, _, _ = mock_fanduel_files
+    optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+    optimizer.load_players_from_csv(str(players_csv))
+
+    test_proj = tmp_path / "salary_only_proj.csv"
+    test_proj.write_text(
+        "player,salary,fantasy\n"
+        "KC QB1,$7500,\n"
+    )
+
+    updated, untouched = apply_forward_projections(optimizer, test_proj, zero_unprojected=False)
+    player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+    # FPPG must NOT be overwritten by the $7500 salary
+    assert player_dict.get("KC QB1") != 7500.0
+
+
+def test_position_coverage_derived_from_feed_rows(mock_fanduel_files, tmp_path: Path):
+    """Verifies that an explicit position column in feed rows registers coverage even if names do not match."""
+    _, players_csv, _, _ = mock_fanduel_files
+    optimizer = get_optimizer(Site.FANDUEL, Sport.FOOTBALL)
+    optimizer.load_players_from_csv(str(players_csv))
+
+    # Feed covering RB position, but with an unmatched fictional player name
+    rb_feed = tmp_path / "rb_feed.csv"
+    rb_feed.write_text(
+        "player,position,fantasy\n"
+        "Unmatched RB Name,RB,18.0\n"
+    )
+
+    # When zero_unprojected=True, pool RBs should be zeroed out because RB was covered by the feed,
+    # while other positions (QB, WR, TE) retain baseline because they were NOT in the feed!
+    updated, untouched = apply_forward_projections(optimizer, rb_feed, zero_unprojected=True)
+    player_dict = {p.full_name: p.fppg for p in optimizer.player_pool.all_players}
+
+    # Pool RB (unmatched) is zeroed out
+    assert player_dict.get("KC RB1") == 0.0
+    # Pool QB (uncovered position in feed) retains baseline
+    qb_fppg = player_dict.get("KC QB1")
+    assert qb_fppg is not None and qb_fppg > 0.0
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
 

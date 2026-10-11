@@ -178,6 +178,7 @@ class SimAuditReporter:
 
         # 1. Salary and Stacking Audit
         stacked_count = 0
+        game_stacked_count = 0
         unconstrained_count = 0
         salary_compliant = 0
         def_opp_violations = 0
@@ -194,6 +195,10 @@ class SimAuditReporter:
 
             if qb and qb.team in wr_te_teams:
                 stacked_count += 1
+                if qb.game_info and qb.game_info.home_team and qb.game_info.away_team:
+                    opp_team = qb.game_info.away_team if qb.team == qb.game_info.home_team else qb.game_info.home_team
+                    if opp_team in wr_te_teams:
+                        game_stacked_count += 1
             else:
                 unconstrained_count += 1
 
@@ -259,6 +264,12 @@ class SimAuditReporter:
             stacked_count,
             total,
             (stacked_count / total) * 100,
+        )
+        logger.info(
+            "  - Game Stacks (Bring-Back): %d / %d (%.1f%%) feature QB + WR/TE + Opposing WR/TE.",
+            game_stacked_count,
+            total,
+            (game_stacked_count / total) * 100,
         )
         logger.info(
             "  - Standalone Rushing QBs: %d / %d (%.1f%%) feature unconstrained rosters.",

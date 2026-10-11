@@ -63,13 +63,21 @@ def detect_site_from_name(filename: str) -> Optional[str]:
     return None
 
 
-def detect_site_from_content(path: Path) -> Optional[str]:
+def detect_site_from_content(path: Optional[Path] = None, content: Optional[str] = None) -> Optional[str]:
     """
     Inspects the initial line/header of a CSV for platform-specific tokens.
     DraftKings uses 'DST', 'TeamAbbrev', 'AvgPointsPerGame'.
     FanDuel uses 'DEF', 'FPPG', 'Injury Indicator', 'Nickname'.
     """
-    if not path.exists() or not path.is_file():
+    if content:
+        header = content.splitlines()[0].lower() if content.strip() else ""
+        if any(token in header for token in ("avgpointspergame", "teamabbrev", "dst")):
+            return "draftkings"
+        if any(token in header for token in ("fppg", "injury indicator", "nickname", "def")):
+            return "fanduel"
+        return None
+
+    if path is None or not path.exists() or not path.is_file():
         return None
     try:
         with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:

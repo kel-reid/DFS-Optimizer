@@ -258,3 +258,93 @@ def test_zero_unprojected_players_excluded_from_pool(mock_fanduel_files, tmp_pat
     for lineup in candidates:
         for p in lineup.lineup:
             assert "WR3" not in p.full_name, f"Unprojected bench player {p.full_name} was selected!"
+
+
+def test_game_bring_back_stack_constraint(mock_fanduel_files):
+    """Verifies that GameBringBackStack enforces QB + same-team WR/TE + opposing WR/TE."""
+    from src.engine.solver import GameBringBackStack
+
+    config, _, _, _ = mock_fanduel_files
+    loader = FanDuelDataLoader(config)
+    optimizer = loader.load_and_sanitize()
+    optimizer.add_stack(GameBringBackStack())
+
+    lineups = list(optimizer.optimize(n=5))
+    assert len(lineups) == 5
+
+    for idx, lineup in enumerate(lineups, 1):
+        qb = next((p for p in lineup.lineup if "QB" in p.positions), None)
+        assert qb is not None, f"Lineup #{idx} missing QB"
+        assert qb.game_info is not None
+
+        opp_team = qb.game_info.away_team if qb.team == qb.game_info.home_team else qb.game_info.home_team
+
+        same_pass_catchers = [
+            p for p in lineup.lineup
+            if p.team == qb.team and any(pos in ("WR", "TE") for pos in p.positions)
+        ]
+        opp_pass_catchers = [
+            p for p in lineup.lineup
+            if p.team == opp_team and any(pos in ("WR", "TE") for pos in p.positions)
+        ]
+
+        assert len(same_pass_catchers) >= 1, f"Lineup #{idx} missing same-team pass catcher: {qb.team}"
+        assert len(opp_pass_catchers) >= 1, f"Lineup #{idx} missing opposing bring-back pass catcher: {opp_team}"
+
+
+def test_game_stack_ratio_validation(mock_fanduel_files):
+    """Verifies bounds checking for game_stack_ratio and stack_ratio."""
+    config, _, _, _ = mock_fanduel_files
+
+    # Valid settings
+    config.stack_ratio = 0.80
+    config.game_stack_ratio = 0.40
+    config._validate_exposures()
+
+    # game_stack_ratio > stack_ratio must raise ValueError
+    config.game_stack_ratio = 0.85
+    with pytest.raises(ValueError, match="cannot exceed total stack ratio"):
+        config._validate_exposures()
+
+    # Negative game_stack_ratio must raise ValueError
+    config.game_stack_ratio = -0.10
+    with pytest.raises(ValueError, match="Invalid game_stack_ratio"):
+        config._validate_exposures()
+
+    # game_stack_ratio > 1.0 must raise ValueError
+    config.stack_ratio = 1.0
+    config.game_stack_ratio = 1.2
+    with pytest.raises(ValueError, match="Invalid game_stack_ratio"):
+        config._validate_exposures()
+
+
+def test_candidate_pool_game_stack_allocation(mock_fanduel_files):
+    """Verifies CandidatePoolGenerator generates game stacks with bring-backs when game_stack_ratio > 0."""
+    config, _, _, _ = mock_fanduel_files
+    config.num_candidates = 8
+    config.stack_ratio = 0.75
+    config.game_stack_ratio = 0.50  # 4 game stacks, 2 primary stacks, 2 unconstrained
+
+    loader = FanDuelDataLoader(config)
+    optimizer = loader.load_and_sanitize()
+
+    generator = CandidatePoolGenerator(optimizer, config)
+    candidates, mat = generator.generate_candidate_pool()
+
+    assert len(candidates) == 8
+    assert mat.shape == (8, len(generator.players))
+
+    # Verify at least 1 candidate satisfies Game Stack with Bring-Back
+    bring_back_found = False
+    for lineup in candidates:
+        qb = next((p for p in lineup.lineup if "QB" in p.positions), None)
+        if qb and qb.game_info:
+            opp_team = qb.game_info.away_team if qb.team == qb.game_info.home_team else qb.game_info.home_team
+            same = [p for p in lineup.lineup if p.team == qb.team and any(pos in ("WR", "TE") for pos in p.positions)]
+            opp = [p for p in lineup.lineup if p.team == opp_team and any(pos in ("WR", "TE") for pos in p.positions)]
+            if len(same) >= 1 and len(opp) >= 1:
+                bring_back_found = True
+                break
+
+    assert bring_back_found, "Candidate pool failed to include Game Stack with Bring-Back!"
+

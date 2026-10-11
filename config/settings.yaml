@@ -58,6 +58,7 @@ fanduel:
     max_exposure: 0.25
   solver:
     stack_ratio: 0.80
+    game_stack_ratio: 0.40
     max_repeating_players: 6
     randomness_deviation: 0.25
     exclude_out_injured: true
@@ -83,6 +84,7 @@ draftkings:
     max_exposure: 0.25
   solver:
     stack_ratio: 0.80
+    game_stack_ratio: 0.40
     max_repeating_players: 6
     randomness_deviation: 0.25
     exclude_out_injured: true

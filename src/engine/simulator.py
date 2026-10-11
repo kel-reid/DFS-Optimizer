@@ -41,11 +41,31 @@ class CorrelatedGameEngine:
                 opp_team = p.game_info.away_team if p.team == p.game_info.home_team else p.game_info.home_team
                 self.player_opp_indices[i] = self.team_to_idx.get(opp_team, -1)
 
+        # Game mapping for shared game-level pace shock
+        self.games: List[Tuple[str, str]] = []
+        game_set: set[Tuple[str, str]] = set()
+        for p in players:
+            if p.game_info and p.game_info.home_team and p.game_info.away_team:
+                pair = sorted([p.game_info.home_team, p.game_info.away_team])
+                g_key: Tuple[str, str] = (pair[0], pair[1])
+                if g_key not in game_set:
+                    game_set.add(g_key)
+                    self.games.append(g_key)
+        self.game_to_idx = {g: idx for idx, g in enumerate(self.games)}
+        self.team_game_indices = np.full(len(self.teams), -1, dtype=np.int32)
+        for p in players:
+            if p.game_info and p.game_info.home_team and p.game_info.away_team:
+                t_idx = self.team_to_idx.get(p.team, -1)
+                pair = sorted([p.game_info.home_team, p.game_info.away_team])
+                g_key = (pair[0], pair[1])
+                if t_idx >= 0 and g_key in self.game_to_idx:
+                    self.team_game_indices[t_idx] = self.game_to_idx[g_key]
+
     def simulate_game_trials(self) -> np.ndarray:
         """
         Generates simulated player score matrix S in R^(P x T) across T trials.
-        Incorporates right-skewed Gamma distributions with team offensive covariance
-        and QB/pass-catcher synergy.
+        Incorporates right-skewed Gamma distributions with team offensive covariance,
+        shared game-pace shootout correlation, and QB/pass-catcher synergy.
         """
         T = self.config.num_sim_trials
         P = self.P
@@ -87,11 +107,28 @@ class CorrelatedGameEngine:
             if p.fppg == 0.0:
                 base_draws[i, :] = 0.0
 
-        # 2. Correlated Game-Level & Team Shocks
-        sigma_team = 0.22
+        # 2. Correlated Game-Pace & Team Offensive Shocks
+        sigma_game = 0.15
+        sigma_team = 0.18
         num_teams = len(self.teams)
+        num_games = len(self.games)
+
         team_z = rng.standard_normal(size=(num_teams, T)).astype(np.float32)
-        team_factors = np.exp(sigma_team * team_z - 0.5 * (sigma_team ** 2))
+        if num_games > 0:
+            game_z = rng.standard_normal(size=(num_games, T)).astype(np.float32)
+        else:
+            game_z = np.zeros((1, T), dtype=np.float32)
+
+        team_factors = np.zeros((num_teams, T), dtype=np.float32)
+        for t_idx in range(num_teams):
+            g_idx = self.team_game_indices[t_idx]
+            if g_idx >= 0:
+                log_shock = sigma_game * game_z[g_idx, :] + sigma_team * team_z[t_idx, :]
+                mean_adj = 0.5 * (sigma_game ** 2 + sigma_team ** 2)
+            else:
+                log_shock = 0.22 * team_z[t_idx, :]
+                mean_adj = 0.5 * (0.22 ** 2)
+            team_factors[t_idx, :] = np.exp(log_shock - mean_adj)
 
         # Apply team offensive shocks to skill players and inverse opponent shock to defenses
         sim_points = np.copy(base_draws)
@@ -100,7 +137,14 @@ class CorrelatedGameEngine:
                 if "D" in self.players[i].positions or "DST" in self.players[i].positions:
                     opp_t_idx = self.player_opp_indices[i]
                     if opp_t_idx >= 0:
-                        opp_shock = np.exp(-sigma_team * team_z[opp_t_idx, :] - 0.5 * (sigma_team ** 2))
+                        g_idx = self.team_game_indices[opp_t_idx]
+                        if g_idx >= 0:
+                            opp_log_shock = -(sigma_game * game_z[g_idx, :] + sigma_team * team_z[opp_t_idx, :])
+                            opp_mean_adj = 0.5 * (sigma_game ** 2 + sigma_team ** 2)
+                        else:
+                            opp_log_shock = -0.22 * team_z[opp_t_idx, :]
+                            opp_mean_adj = 0.5 * (0.22 ** 2)
+                        opp_shock = np.exp(opp_log_shock - opp_mean_adj)
                         sim_points[i, :] *= opp_shock
                 else:
                     t_idx = self.player_team_indices[i]
