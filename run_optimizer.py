@@ -46,7 +46,14 @@ def main() -> None:
     parser.add_argument("--week", type=str, default=None)
     parser.add_argument("--slate", type=str, default=None)
     parser.add_argument("--date", type=str, default=None)
+    parser.add_argument("--ui", action="store_true", help="Launch the local drag-and-drop web dashboard")
+    parser.add_argument("--port", type=int, default=8500, help="Local web dashboard port (default: 8500)")
     args, _ = parser.parse_known_args()
+
+    if args.ui:
+        from src.ui.server import start_ui_server
+        start_ui_server(port=args.port)
+        return
 
     site = resolve_site(
         players_path=args.players_csv,

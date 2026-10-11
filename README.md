@@ -169,7 +169,25 @@ python run_optimizer.py
 ./run_optimizer
 ```
 
-### 3. Containerized Execution (Docker & Docker Compose)
+### 3. Interactive Drag-and-Drop Web Dashboard (`--ui`)
+
+To optimize contests directly from your browser:
+
+```bash
+# Launch the built-in local web dashboard:
+python run_optimizer.py --ui
+
+# Or via executable wrapper:
+./run_optimizer --ui
+```
+
+* **Drag-and-Drop Ingestion**: Drop `DKSalaries.csv` (or FanDuel `players.csv`) and `DKEntries.csv` directly from your browser's `Downloads` folder.
+* **Auto-Detection**: Automatically identifies the platform (DraftKings vs. FanDuel), format (Classic vs. Single Game / Showdown), entry fee, and reserved entries count.
+* **Visual Exposure Controls**: Sliders for target lineup volume ($K$), primary stack ratio ($80\%$), and position exposure ceilings ($25\%$ QB, $25\%$ Skill, $20\%$ DEF).
+* **Live Simulation Telemetry**: Real-time progress across all 4 simulation stages with streaming terminal logs.
+* **Instant Download**: One-click **"Download Completed Lineups CSV"** saves the populated file directly to your browser's downloads folder.
+
+### 4. Containerized Execution (Docker & Docker Compose)
 
 The engine is fully containerized with CBC solver binaries pre-installed:
 

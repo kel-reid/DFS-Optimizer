@@ -30,7 +30,7 @@ Architecture & Workflow:
      - Slices strictly to the 150 reserved contest entries.
      - Maps the 150 lineups into the 9 roster columns using standard DraftKings format.
      - Preserves all original contest metadata columns.
-     - Exports populated DataFrame to `data/output/Completed-<template-name>.csv`.
+     - Exports populated DataFrame to `data/<week>/<slate>/completed_lineups.csv`.
   5. Post-Solve Audit:
      - Rigorous quality assurance audit verifying $50k cap, stacks, correlation, and exposures.
 ================================================================================
@@ -44,7 +44,7 @@ import logging
 import math
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 import pandas as pd
 from pydfs_lineup_optimizer import (
@@ -63,6 +63,7 @@ from src.config import DKOptimizerConfig, DraftKingsConfig
 from src.engine import (
     CandidatePoolGenerator,
     CorrelatedGameEngine,
+    GameBringBackStack,
     OpponentFieldSimulator,
     PortfolioSelector,
     SimAuditReporter,
@@ -312,69 +313,114 @@ class DraftKingsLineupPipeline:
     def generate_lineups(self) -> List[Lineup]:
         n = self.config.num_selected_lineups
         ratio = self.config.stack_ratio
-        n_stacked = round(n * ratio)   # 120
-        n_unconstrained = n - n_stacked # 30
+        game_ratio = getattr(self.config, "game_stack_ratio", 0.0)
+        n_game_stacked = round(n * game_ratio)
+        n_primary_stacked = round(n * ratio) - n_game_stacked
+        n_unconstrained = n - n_game_stacked - n_primary_stacked
 
-        logger.info("DraftKings Portfolio Allocation Plan: %d Stacked (%.0f%%) + %d Unconstrained (%.0f%%)",
-                    n_stacked, ratio * 100, n_unconstrained, (1 - ratio) * 100)
+        logger.info(
+            "DraftKings Portfolio Allocation Plan: %d Game Stack w/ Bring-Back (%.0f%%) + %d Primary Stack (%.0f%%) + %d Unconstrained (%.0f%%)",
+            n_game_stacked,
+            (n_game_stacked / n) * 100,
+            n_primary_stacked,
+            (n_primary_stacked / n) * 100,
+            n_unconstrained,
+            (n_unconstrained / n) * 100,
+        )
 
-        # Phase 1: Stacked
-        logger.info("--- Phase 1: Solving %d primary stacked lineups (QB + same-team WR/TE) ---", n_stacked)
-        self.configure_optimizer_instance(self.optimizer)
-        self.optimizer.add_stack(PositionsStack(["QB", ("WR", "TE")]))
-
-        for player in self.optimizer.player_pool.all_players:
-            cap = self._get_player_cap_count(player)
-            player.max_exposure = min(1.0, cap / n_stacked) if n_stacked > 0 else 1.0
-
-        stacked_lineups: List[Lineup] = []
-        for i, lineup in enumerate(self.optimizer.optimize(n=n_stacked), start=1):
-            stacked_lineups.append(lineup)
-            if i % 30 == 0 or i == n_stacked:
-                logger.info("... Solved %d / %d stacked lineups ...", i, n_stacked)
-
-        if n_unconstrained == 0:
-            return stacked_lineups
-
-        usage_phase1: Counter[Any] = Counter()
-        for l in stacked_lineups:
-            for p in l.lineup:
-                usage_phase1[p] += 1
-
-        # Phase 2: Unconstrained
-        logger.info("--- Phase 2: Solving %d unconstrained lineups (rushing QB upside) ---", n_unconstrained)
-        opt_unconstrained = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
-        opt_unconstrained.player_pool.load_players(self.players)
-        opt_unconstrained.player_pool.with_injured = True
-        self.configure_optimizer_instance(opt_unconstrained)
-
-        for player in opt_unconstrained.player_pool.all_players:
-            used = usage_phase1.get(player, 0)
-            cap = self._get_player_cap_count(player)
-            remaining = cap - used
-            if remaining <= 0:
-                opt_unconstrained.player_pool.remove_player(player)
-            else:
-                player.max_exposure = min(1.0, remaining / n_unconstrained)
-
-        stacked_sets = [set(p.id for p in l.lineup) for l in stacked_lineups]
+        all_lineups: List[Lineup] = []
+        accepted_sets: List[set[str]] = []
+        usage: Counter[Any] = Counter()
         max_rep = self.config.max_repeating_players
 
-        unconstrained_lineups: List[Lineup] = []
-        for lineup in opt_unconstrained.optimize(n=n_unconstrained * 2):
-            l_set = set(p.id for p in lineup.lineup)
-            if any(len(l_set & s_set) > max_rep for s_set in stacked_sets):
-                continue
-            unconstrained_lineups.append(lineup)
-            if len(unconstrained_lineups) % 15 == 0 or len(unconstrained_lineups) == n_unconstrained:
-                logger.info("... Solved %d / %d unconstrained lineups ...", len(unconstrained_lineups), n_unconstrained)
-            if len(unconstrained_lineups) == n_unconstrained:
-                break
+        # Phase 1: Game Stack with Bring-Back
+        if n_game_stacked > 0:
+            logger.info("--- Phase 1: Solving %d game stacked lineups (QB + same WR/TE + opp WR/TE) ---", n_game_stacked)
+            self.configure_optimizer_instance(self.optimizer)
+            self.optimizer.add_stack(GameBringBackStack())
 
-        combined = stacked_lineups + unconstrained_lineups
-        logger.info("Successfully assembled %d total lineups (%d stacked + %d unconstrained).",
-                    len(combined), len(stacked_lineups), len(unconstrained_lineups))
-        return combined
+            for player in self.optimizer.player_pool.all_players:
+                cap = self._get_player_cap_count(player)
+                player.max_exposure = min(1.0, cap / n_game_stacked) if n_game_stacked > 0 else 1.0
+
+            for i, lineup in enumerate(self.optimizer.optimize(n=n_game_stacked), start=1):
+                all_lineups.append(lineup)
+                accepted_sets.append(set(p.id for p in lineup.lineup))
+                for p in lineup.lineup:
+                    usage[p] += 1
+                if i % 30 == 0 or i == n_game_stacked:
+                    logger.info("... Solved %d / %d game stacked lineups ...", i, n_game_stacked)
+
+        # Phase 2: Primary Stacked
+        target_stacked = n_game_stacked + n_primary_stacked
+        needed_primary = target_stacked - len(all_lineups)
+        if needed_primary > 0:
+            logger.info("--- Phase 2: Solving %d primary stacked lineups (QB + same-team WR/TE) ---", needed_primary)
+            opt_primary = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
+            opt_primary.player_pool.load_players(self.players)
+            opt_primary.player_pool.with_injured = True
+            self.configure_optimizer_instance(opt_primary)
+            opt_primary.add_stack(PositionsStack(["QB", ("WR", "TE")]))
+
+            for player in opt_primary.player_pool.all_players:
+                used = usage.get(player, 0)
+                cap = self._get_player_cap_count(player)
+                remaining = cap - used
+                if remaining <= 0:
+                    opt_primary.player_pool.remove_player(player)
+                else:
+                    player.max_exposure = min(1.0, remaining / needed_primary)
+
+            solved_primary = 0
+            for lineup in opt_primary.optimize(n=needed_primary * 2):
+                l_set = set(p.id for p in lineup.lineup)
+                if any(len(l_set & s_set) > max_rep for s_set in accepted_sets):
+                    continue
+                all_lineups.append(lineup)
+                accepted_sets.append(l_set)
+                for p in lineup.lineup:
+                    usage[p] += 1
+                solved_primary += 1
+                if solved_primary % 30 == 0 or solved_primary == needed_primary:
+                    logger.info("... Solved %d / %d primary stacked lineups ...", solved_primary, needed_primary)
+                if solved_primary == needed_primary:
+                    break
+
+        # Phase 3: Unconstrained
+        needed_unconstrained = n - len(all_lineups)
+        if needed_unconstrained > 0:
+            logger.info("--- Phase 3: Solving %d unconstrained lineups (rushing QB upside) ---", needed_unconstrained)
+            opt_unconstrained = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
+            opt_unconstrained.player_pool.load_players(self.players)
+            opt_unconstrained.player_pool.with_injured = True
+            self.configure_optimizer_instance(opt_unconstrained)
+
+            for player in opt_unconstrained.player_pool.all_players:
+                used = usage.get(player, 0)
+                cap = self._get_player_cap_count(player)
+                remaining = cap - used
+                if remaining <= 0:
+                    opt_unconstrained.player_pool.remove_player(player)
+                else:
+                    player.max_exposure = min(1.0, remaining / needed_unconstrained)
+
+            solved_unconstrained = 0
+            for lineup in opt_unconstrained.optimize(n=needed_unconstrained * 3):
+                l_set = set(p.id for p in lineup.lineup)
+                if any(len(l_set & s_set) > max_rep for s_set in accepted_sets):
+                    continue
+                all_lineups.append(lineup)
+                accepted_sets.append(l_set)
+                for p in lineup.lineup:
+                    usage[p] += 1
+                solved_unconstrained += 1
+                if solved_unconstrained % 15 == 0 or solved_unconstrained == needed_unconstrained:
+                    logger.info("... Solved %d / %d unconstrained lineups ...", solved_unconstrained, needed_unconstrained)
+                if solved_unconstrained == needed_unconstrained:
+                    break
+
+        logger.info("Successfully assembled %d total lineups across portfolio.", len(all_lineups))
+        return all_lineups
 
 
 # -----------------------------------------------------------------------------
@@ -401,6 +447,7 @@ class DraftKingsPortfolioAuditor:
 
         violations: List[str] = []
         stacked_count = 0
+        game_stacked_count = 0
         unconstrained_count = 0
 
         for idx, lineup in enumerate(lineups, start=1):
@@ -436,6 +483,15 @@ class DraftKingsPortfolioAuditor:
                 ]
                 if len(same_team_pass_catchers) > 0:
                     stacked_count += 1
+                    if qb_player.game_info:
+                        game = qb_player.game_info
+                        opp_team = game.home_team if game.away_team == qb_player.team else game.away_team
+                        opp_pass_catchers = [
+                            op for op in offensive_players
+                            if op.team == opp_team and any(pos in ("WR", "TE") for pos in op.positions)
+                        ]
+                        if len(opp_pass_catchers) > 0:
+                            game_stacked_count += 1
                 else:
                     unconstrained_count += 1
 
@@ -502,6 +558,8 @@ class DraftKingsPortfolioAuditor:
         logger.info("  - 100%% of player exposures comply with position caps.")
         logger.info("  - Primary Stacks: %d / %d (%.1f%%) lineups feature QB + WR/TE stack.",
                     stacked_count, total_lineups, (stacked_count / total_lineups) * 100)
+        logger.info("  - Game Stacks (Bring-Back): %d / %d (%.1f%%) lineups feature QB + WR/TE + Opp WR/TE.",
+                    game_stacked_count, total_lineups, (game_stacked_count / total_lineups) * 100)
         logger.info("  - Unconstrained:  %d / %d (%.1f%%) lineups feature unconstrained rushing QBs.",
                     unconstrained_count, total_lineups, (unconstrained_count / total_lineups) * 100)
         logger.info("  - 0%% lineups feature DST against opposing offensive skill players.")
@@ -628,6 +686,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         help="Contest entry fee in dollars (default: auto-detect from template)",
     )
     parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
+    parser.add_argument("--game-stack-ratio", type=float, default=default_cfg.game_stack_ratio)
     parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)
     parser.add_argument("--max-rb-exposure", type=float, default=default_cfg.max_rb_exposure)
     parser.add_argument("--max-wr-exposure", type=float, default=default_cfg.max_wr_exposure)
@@ -670,16 +729,13 @@ def parse_dk_arguments() -> DKOptimizerConfig:
             date_dir = Path(f"data/{args.date}/{args.slate}")
             if date_dir.is_dir():
                 slate_dir = date_dir
-        if slate_dir.is_dir():
-            output_path = slate_dir / "completed_lineups.csv"
-        else:
-            output_dir = Path(f"data/output/{args.slate}")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"Completed-{template_path.name}"
+        slate_dir.mkdir(parents=True, exist_ok=True)
+        output_path = slate_dir / "completed_lineups.csv"
     else:
-        output_dir = Path("data/output")
+        w_str = norm_week or "week-05"
+        output_dir = Path(f"data/{w_str}/main-slate")
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"Completed-{template_path.name}"
+        output_path = output_dir / "completed_lineups.csv"
 
     exclude_injured = False if args.keep_injured else default_cfg.exclude_out_injured
     zero_unproj = False if args.keep_unprojected else default_cfg.zero_unprojected
@@ -700,6 +756,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         max_exposure=args.max_exposure,
         randomness_deviation=args.randomness,
         stack_ratio=args.stack_ratio,
+        game_stack_ratio=args.game_stack_ratio,
         max_qb_exposure=args.max_qb_exposure,
         max_rb_exposure=args.max_rb_exposure,
         max_wr_exposure=args.max_wr_exposure,
@@ -712,9 +769,15 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     )
 
 
-def run_draftkings_pipeline(config: Optional[DKOptimizerConfig] = None) -> None:
+def run_draftkings_pipeline(
+    config: Optional[DKOptimizerConfig] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> Path:
     if config is None:
         config = parse_dk_arguments()
+
+    if progress_callback:
+        progress_callback(5, "Initializing DraftKings Monte Carlo Pipeline ($50,000 Cap)...")
 
     logger.info("======================================================================")
     logger.info(" DRAFTKINGS NFL DFS SIMULATION & OPTIMIZATION PIPELINE ")
@@ -722,19 +785,27 @@ def run_draftkings_pipeline(config: Optional[DKOptimizerConfig] = None) -> None:
     logger.info("======================================================================")
 
     # 1. Ingest Data & Filter Backup QBs / Inactives
+    if progress_callback:
+        progress_callback(15, "Ingesting salary data & filtering confirmed inactives / backup QBs...")
     loader = DraftKingsDataLoader(config)
     optimizer = loader.initialize_and_load_optimizer()
     players = list(optimizer.player_pool.filtered_players)
 
     # 2. Stage 1: Candidate Pool Generation (MILP)
+    if progress_callback:
+        progress_callback(35, f"Stage 1: Generating candidate pool of {config.num_candidates} lineups via MILP...")
     candidate_generator = CandidatePoolGenerator(optimizer, config)
     candidates, candidates_matrix = candidate_generator.generate_candidate_pool()
 
     # 3. Stage 2: Simulate Opponent Field Lineups
+    if progress_callback:
+        progress_callback(55, f"Stage 2: Simulating {config.num_field_lineups:,} opponent field lineups...")
     field_simulator = OpponentFieldSimulator(players, config)
     field_matrix = field_simulator.simulate_field()
 
     # 4. Stage 3: Correlated Game Outcome Engine & Vectorized Scoring
+    if progress_callback:
+        progress_callback(75, f"Stage 3: Running {config.num_sim_trials:,} correlated game trials & BLAS scoring...")
     game_engine = CorrelatedGameEngine(players, config)
     sim_points = game_engine.simulate_game_trials()
 
@@ -743,6 +814,8 @@ def run_draftkings_pipeline(config: Optional[DKOptimizerConfig] = None) -> None:
     )
 
     # 5. Stage 4: Portfolio Selection (Exposure Ceilings)
+    if progress_callback:
+        progress_callback(90, f"Stage 4: Selecting {config.num_selected_lineups} lineups maximizing simulated ROI...")
     selector = PortfolioSelector(config)
     selected_lineups = selector.select_portfolio(candidates, sim_roi, win_counts, top1_rates)
 
@@ -751,13 +824,19 @@ def run_draftkings_pipeline(config: Optional[DKOptimizerConfig] = None) -> None:
     SimAuditReporter.audit_and_report(selected_lineups, config, players, sim_roi, win_counts, top1_rates)
 
     # 7. Map Lineups into DraftKings CSV upload format and export
+    if progress_callback:
+        progress_callback(95, "Mapping lineups to DraftKings contest template...")
     exporter = DraftKingsTemplateExporter(config)
     output_file = exporter.export_lineups(selected_lineups)
+
+    if progress_callback:
+        progress_callback(100, "DraftKings optimization complete! Ready for download.")
 
     print("\n" + "=" * 70)
     print(" DRAFTKINGS PIPELINE COMPLETE: Ready for upload!")
     print(f" Output Location: {output_file.resolve()}")
     print("=" * 70)
+    return output_file
 
 
 if __name__ == "__main__":

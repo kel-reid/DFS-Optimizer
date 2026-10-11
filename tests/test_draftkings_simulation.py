@@ -443,14 +443,14 @@ def test_draftkings_date_dir_resolution(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_draftkings_config_from_settings_nonexistent_slate_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verifies output_csv routes to data/output/<slate>/Completed-<template> when slate dir does not exist."""
+    """Verifies output_csv routes to corresponding week directory when slate dir does not exist."""
     monkeypatch.chdir(tmp_path)
     # Provide explicit template to test output_csv fallback
     tmpl = tmp_path / "CustomTemplate.csv"
     tmpl.write_text("Entry ID,Contest ID,Contest Name,Entry Fee\n1,100,Test,$5.00\n")
 
     cfg = DKOptimizerConfig.from_settings(slate="future-slate", week="99", template_csv=tmpl)
-    assert cfg.output_csv == Path("data/output/future-slate/Completed-CustomTemplate.csv")
+    assert cfg.output_csv == Path("data/week-99/future-slate/completed_lineups.csv")
     assert cfg.entry_fee == 5.0
 
 

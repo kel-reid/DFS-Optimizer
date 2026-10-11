@@ -107,6 +107,7 @@ class BaseOptimizerConfig:
 
     # Candidate generation solver constraints
     stack_ratio: float = 0.80        # 80% primary stacked / 20% unconstrained
+    game_stack_ratio: float = 0.40   # 40% game stacked with bring-back (QB + same WR/TE + opp WR/TE)
     max_repeating_players: int = 6   # Guarantees >= 3 unique players between every pair of candidates
     randomness_deviation: float = 0.25  # ±25% uniform random projection jitter during MILP solving
     exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
@@ -136,6 +137,20 @@ class BaseOptimizerConfig:
                 raise ValueError(
                     f"Invalid {name}: {val}. Exposure caps must be between 0.0 and 1.0."
                 )
+
+        if not (0.0 <= self.stack_ratio <= 1.0):
+            raise ValueError(
+                f"Invalid stack_ratio: {self.stack_ratio}. Must be between 0.0 and 1.0."
+            )
+        if not (0.0 <= self.game_stack_ratio <= 1.0):
+            raise ValueError(
+                f"Invalid game_stack_ratio: {self.game_stack_ratio}. Must be between 0.0 and 1.0."
+            )
+        if self.game_stack_ratio > self.stack_ratio:
+            raise ValueError(
+                f"Invalid game_stack_ratio ({self.game_stack_ratio}) > stack_ratio ({self.stack_ratio}). "
+                "Game stack ratio cannot exceed total stack ratio."
+            )
 
 
 @dataclass
@@ -201,7 +216,7 @@ class SimOptimizerConfig(BaseOptimizerConfig):
             if k in exp_cfg:
                 params[k] = float(exp_cfg[k])
 
-        for k in ["stack_ratio", "randomness_deviation"]:
+        for k in ["stack_ratio", "game_stack_ratio", "randomness_deviation"]:
             if k in solver_cfg:
                 params[k] = float(solver_cfg[k])
         for k in ["max_repeating_players"]:
@@ -223,6 +238,7 @@ class SimOptimizerConfig(BaseOptimizerConfig):
             "DFS_NUM_TRIALS": ("num_sim_trials", int),
             "DFS_NUM_LINEUPS": ("num_selected_lineups", int),
             "DFS_STACK_RATIO": ("stack_ratio", float),
+            "DFS_GAME_STACK_RATIO": ("game_stack_ratio", float),
             "DFS_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_RANDOMNESS": ("randomness_deviation", float),
             "DFS_ZERO_UNPROJECTED": ("zero_unprojected", lambda v: str(v).lower() in ("1", "true", "yes")),
@@ -293,14 +309,8 @@ class SimOptimizerConfig(BaseOptimizerConfig):
                     date_dir = Path(f"data/{slate_date}/{slate}")
                     if date_dir.is_dir():
                         slate_dir = date_dir
-                if slate_dir.is_dir():
-                    params["output_csv"] = slate_dir / "completed_lineups.csv"
-                else:
-                    out_d = Path(f"data/output/{slate}")
-                    out_d.mkdir(parents=True, exist_ok=True)
-                    tmpl_p = params.get("template_csv")
-                    tmpl_name = tmpl_p.name if tmpl_p else "template.csv"
-                    params["output_csv"] = out_d / f"Completed-{tmpl_name}"
+                slate_dir.mkdir(parents=True, exist_ok=True)
+                params["output_csv"] = slate_dir / "completed_lineups.csv"
 
         return cls(**params)
 
@@ -311,7 +321,7 @@ class DraftKingsConfig(BaseOptimizerConfig):
 
     players_csv: Path = Path("data/players/DKSalaries.csv")
     template_csv: Path = Path("data/templates/DKEntries.csv")
-    output_csv: Path = Path("data/output/Completed-DKEntries.csv")
+    output_csv: Path = Path("data/week-05/main-slate/completed_lineups.csv")
     salary_cap: int = 50_000
     min_field_salary: int = 48_500
     id_format: str = "name_id"
@@ -420,7 +430,7 @@ class DraftKingsConfig(BaseOptimizerConfig):
         if "max_dst_exposure" in exp_cfg:
             params["max_def_exposure"] = float(exp_cfg["max_dst_exposure"])
 
-        for k in ["stack_ratio", "randomness_deviation"]:
+        for k in ["stack_ratio", "game_stack_ratio", "randomness_deviation"]:
             if k in solver_cfg:
                 params[k] = float(solver_cfg[k])
         for k in ["max_repeating_players"]:
@@ -450,6 +460,8 @@ class DraftKingsConfig(BaseOptimizerConfig):
             "DFS_DK_NUM_LINEUPS": ("num_selected_lineups", int),
             "DFS_STACK_RATIO": ("stack_ratio", float),
             "DFS_DK_STACK_RATIO": ("stack_ratio", float),
+            "DFS_GAME_STACK_RATIO": ("game_stack_ratio", float),
+            "DFS_DK_GAME_STACK_RATIO": ("game_stack_ratio", float),
             "DFS_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_DK_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_RANDOMNESS": ("randomness_deviation", float),
@@ -548,14 +560,8 @@ class DraftKingsConfig(BaseOptimizerConfig):
                     date_dir = Path(f"data/{slate_date}/{slate}")
                     if date_dir.is_dir():
                         slate_dir = date_dir
-                if slate_dir.is_dir():
-                    params["output_csv"] = slate_dir / "completed_lineups.csv"
-                else:
-                    out_d = Path(f"data/output/{slate}")
-                    out_d.mkdir(parents=True, exist_ok=True)
-                    tmpl_p = params.get("template_csv")
-                    tmpl_name = tmpl_p.name if tmpl_p else "DKEntries.csv"
-                    params["output_csv"] = out_d / f"Completed-{tmpl_name}"
+                slate_dir.mkdir(parents=True, exist_ok=True)
+                params["output_csv"] = slate_dir / "completed_lineups.csv"
 
         return cls(**params)
 

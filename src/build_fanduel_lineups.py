@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Callable, Optional
 
 # Re-export core classes for backward compatibility
 from src.config import SimOptimizerConfig
@@ -63,6 +64,7 @@ __all__ = [
     "normalize_week",
     "normalize_name",
     "parse_arguments",
+    "run_fanduel_pipeline",
     "setup_logging",
 ]
 
@@ -96,6 +98,7 @@ def parse_arguments() -> SimOptimizerConfig:
         help="Contest entry fee in dollars (default: auto-detect from template).",
     )
     parser.add_argument("--stack-ratio", type=float, default=default_cfg.stack_ratio)
+    parser.add_argument("--game-stack-ratio", type=float, default=default_cfg.game_stack_ratio)
     parser.add_argument("--max-qb-exposure", type=float, default=default_cfg.max_qb_exposure)
     parser.add_argument("--max-rb-exposure", type=float, default=default_cfg.max_rb_exposure)
     parser.add_argument("--max-wr-exposure", type=float, default=default_cfg.max_wr_exposure)
@@ -140,16 +143,13 @@ def parse_arguments() -> SimOptimizerConfig:
             date_dir = Path(f"data/{args.date}/{args.slate}")
             if date_dir.is_dir():
                 slate_dir = date_dir
-        if slate_dir.is_dir():
-            output_path = slate_dir / "completed_lineups.csv"
-        else:
-            output_dir = Path(f"data/output/{args.slate}")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"Completed-{template_path.name}"
+        slate_dir.mkdir(parents=True, exist_ok=True)
+        output_path = slate_dir / "completed_lineups.csv"
     else:
-        output_dir = Path("data/output")
+        w_str = norm_week or "week-05"
+        output_dir = Path(f"data/{w_str}/main-slate")
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"Completed-{template_path.name}"
+        output_path = output_dir / "completed_lineups.csv"
 
     exclude_injured = False if args.keep_injured else default_cfg.exclude_out_injured
     zero_unproj = False if args.keep_unprojected else default_cfg.zero_unprojected
@@ -165,6 +165,7 @@ def parse_arguments() -> SimOptimizerConfig:
         num_selected_lineups=args.num_lineups,
         entry_fee=args.entry_fee,
         stack_ratio=args.stack_ratio,
+        game_stack_ratio=args.game_stack_ratio,
         max_qb_exposure=args.max_qb_exposure,
         max_rb_exposure=args.max_rb_exposure,
         max_wr_exposure=args.max_wr_exposure,
@@ -192,26 +193,44 @@ def setup_logging() -> None:
     )
 
 
-def main() -> None:
-    """Main execution orchestrator for the FanDuel simulation pipeline."""
-    print("[INFO] Initializing FanDuel Football Optimizer...")
-    setup_logging()
-    config = parse_arguments()
+def run_fanduel_pipeline(
+    config: Optional[SimOptimizerConfig] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> Path:
+    """Executes the complete FanDuel simulation and portfolio optimization pipeline."""
+    if config is None:
+        config = parse_arguments()
+
+    if progress_callback:
+        progress_callback(5, "Initializing FanDuel Monte Carlo Pipeline ($60,000 Cap)...")
+
+    logger.info("======================================================================")
+    logger.info(" FANDUEL NFL DFS SIMULATION & OPTIMIZATION PIPELINE ")
+    logger.info(" Monte Carlo Tournament Game Slate Engine ($60,000 Cap) ")
+    logger.info("======================================================================")
 
     # 1. Ingest Data & Filter Backup QBs / Apply Forward Projections
+    if progress_callback:
+        progress_callback(15, "Ingesting player data & filtering confirmed inactives / backup QBs...")
     loader = FanDuelDataLoader(config)
     optimizer = loader.load_and_sanitize()
     players = list(optimizer.player_pool.filtered_players)
 
     # 2. Stage 1: Generate Candidate Pool of Lineups (MILP)
+    if progress_callback:
+        progress_callback(35, f"Stage 1: Generating candidate pool of {config.num_candidates} lineups via MILP...")
     candidate_generator = CandidatePoolGenerator(optimizer, config)
     candidates, candidates_matrix = candidate_generator.generate_candidate_pool()
 
     # 3. Stage 2: Simulate Opponent Field Lineups
+    if progress_callback:
+        progress_callback(55, f"Stage 2: Simulating {config.num_field_lineups:,} opponent field lineups...")
     field_simulator = OpponentFieldSimulator(players, config)
     field_matrix = field_simulator.simulate_field()
 
     # 4. Stage 3: Correlated Game Outcome Engine & Vectorized Scoring
+    if progress_callback:
+        progress_callback(75, f"Stage 3: Running {config.num_sim_trials:,} correlated game trials & BLAS scoring...")
     game_engine = CorrelatedGameEngine(players, config)
     sim_points = game_engine.simulate_game_trials()
 
@@ -220,20 +239,35 @@ def main() -> None:
     )
 
     # 5. Stage 4: Portfolio Selection (Exposure Ceilings)
+    if progress_callback:
+        progress_callback(90, f"Stage 4: Selecting {config.num_selected_lineups} lineups maximizing simulated ROI...")
     selector = PortfolioSelector(config)
     selected_lineups = selector.select_portfolio(candidates, sim_roi, win_counts, top1_rates)
 
     # 6. Stage 4: Map Lineups into pandas DataFrame and Export Upload CSV
+    if progress_callback:
+        progress_callback(95, "Mapping lineups to FanDuel contest template...")
     exporter = FanDuelTemplateExporter(config)
     output_file = exporter.export_lineups(selected_lineups)
 
     # 7. Post-Solve Audit & Quality Assurance
     SimAuditReporter.audit_and_report(selected_lineups, config, players, sim_roi, win_counts, top1_rates)
 
+    if progress_callback:
+        progress_callback(100, "FanDuel optimization complete! Ready for upload.")
+
     print("\n" + "=" * 70)
     print(" SIMULATION PIPELINE COMPLETE: Ready for upload to FanDuel!")
     print(f" Output Location: {output_file.resolve()}")
     print("=" * 70)
+    return output_file
+
+
+def main(config: Optional[SimOptimizerConfig] = None) -> None:
+    """Main execution orchestrator for the FanDuel simulation pipeline."""
+    print("[INFO] Initializing FanDuel Football Optimizer...")
+    setup_logging()
+    run_fanduel_pipeline(config)
 
 
 if __name__ == "__main__":

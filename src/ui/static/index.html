@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DFS Optimizer Pro | Quantitative Monte Carlo Tournament Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+  <div class="app-background"></div>
+
+  <div class="layout-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div>
+          <div class="brand-title-wrap">
+            <h1 class="brand-title">DFS Optimizer</h1>
+            <span id="engine-status-pill" class="status-pill status-ready">
+              <span class="pulse-dot"></span> Ready for Ingestion
+            </span>
+          </div>
+          <p class="brand-subtitle">Quantitative Monte Carlo Simulation Engine</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="platform-pill" id="platform-badge-pill">
+          <span id="detected-platform-text">Auto-Detecting Platform</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Ingestion Stage -->
+    <main class="main-content">
+      <!-- Section 1: Drag and Drop Hub -->
+      <section class="card glass-card ingestion-section">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="step-num">1</span>
+            <h2>Contest Ingestion Hub</h2>
+          </div>
+          <p class="card-desc">Drag and drop your official contest CSV files from your browser's Downloads folder. No
+            file copying required.</p>
+        </div>
+
+        <div class="dropzones-grid">
+          <!-- Dropzone 1: Entries Template -->
+          <div class="dropzone" id="dropzone-template" tabindex="0">
+            <input type="file" id="input-template" accept=".csv" class="file-input" hidden>
+            <div class="dropzone-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </div>
+            <div class="dropzone-title">Contest Entries Template CSV</div>
+            <div class="dropzone-sub">Upload DraftKings or FanDuel entry template</div>
+            <div class="dropzone-file-name" id="file-name-template">No file selected</div>
+          </div>
+
+          <!-- Dropzone 2: Salaries -->
+          <div class="dropzone" id="dropzone-players" tabindex="0">
+            <input type="file" id="input-players" accept=".csv" class="file-input" hidden>
+            <div class="dropzone-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <div class="dropzone-title">Player Salaries CSV</div>
+            <div class="dropzone-sub">Upload DraftKings or FanDuel players list</div>
+            <div class="dropzone-file-name" id="file-name-players">No file selected</div>
+          </div>
+
+          <!-- Dropzone 3: Projections -->
+          <div class="dropzone" id="dropzone-projections" tabindex="0">
+            <input type="file" id="input-projections" accept=".csv" class="file-input" hidden>
+            <div class="dropzone-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+            </div>
+            <div class="dropzone-title">Player Projections CSV</div>
+            <div class="dropzone-sub">Upload Daily Fantasy Projections</div>
+            <div class="dropzone-file-name" id="file-name-projections">No file selected</div>
+          </div>
+        </div>
+
+        <!-- Detection Summary Bar -->
+        <div id="detection-summary" class="detection-bar hidden">
+          <div class="metric-item">
+            <span class="metric-label">Detected Platform</span>
+            <span class="metric-val" id="metric-platform">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Contest Format</span>
+            <span class="metric-val" id="metric-format">-</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Entry Fee</span>
+            <span class="metric-val" id="metric-fee">$1.00</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Reserved Entries</span>
+            <span class="metric-val" id="metric-entries">150</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Active Player Pool</span>
+            <span class="metric-val" id="metric-players">-</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Strategy & Portfolio Parameters -->
+      <section class="card glass-card config-section">
+        <div class="card-header collapsible-header" id="config-toggle-header" tabindex="0">
+          <div class="card-title-group">
+            <span class="step-num">2</span>
+            <h2>Portfolio Exposure & Simulation Controls</h2>
+          </div>
+          <span class="toggle-icon">▼</span>
+        </div>
+
+        <div class="config-content" id="config-content">
+          <div class="sliders-grid">
+            <!-- Lineups K -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="num-lineups">Portfolio Entries (K)</label>
+                <span class="val-badge" id="val-num-lineups">150</span>
+              </div>
+              <input type="range" id="num-lineups" min="1" max="150" value="150" step="1" class="custom-slider">
+              <span class="control-hint">Target number of contest upload rows to populate</span>
+            </div>
+
+            <!-- Primary Stack Ratio -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="stack-ratio">Primary Correlation Stack</label>
+                <span class="val-badge" id="val-stack-ratio">80%</span>
+              </div>
+              <input type="range" id="stack-ratio" min="0" max="100" value="80" step="5" class="custom-slider">
+              <span class="control-hint">QB + WR/TE primary franchise correlation stack allocation</span>
+            </div>
+
+            <!-- QB Ceiling -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="max-qb-exposure">Quarterback Max Exposure</label>
+                <span class="val-badge" id="val-max-qb-exposure">25%</span>
+              </div>
+              <input type="range" id="max-qb-exposure" min="5" max="100" value="25" step="1" class="custom-slider">
+              <span class="control-hint">Hard ceiling per QB (<span id="qb-max-count">37</span> / 150 rosters)</span>
+            </div>
+
+            <!-- Skill Positions Ceiling -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="max-skill-exposure">Skill Positions Max Exposure (RB / WR / TE)</label>
+                <span class="val-badge" id="val-max-skill-exposure">25%</span>
+              </div>
+              <input type="range" id="max-skill-exposure" min="5" max="100" value="25" step="1" class="custom-slider">
+              <span class="control-hint">Hard ceiling per skill starter (<span id="skill-max-count">37</span> / 150
+                rosters)</span>
+            </div>
+
+            <!-- Defense Ceiling -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="max-def-exposure">Team Defense Max Exposure (DEF / DST)</label>
+                <span class="val-badge" id="val-max-def-exposure">20%</span>
+              </div>
+              <input type="range" id="max-def-exposure" min="5" max="100" value="20" step="1" class="custom-slider">
+              <span class="control-hint">Hard ceiling per defensive unit (<span id="def-max-count">30</span> / 150
+                rosters)</span>
+            </div>
+
+            <!-- Lineup Uniqueness -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="max-repeating">Max Repeating Players</label>
+                <span class="val-badge" id="val-max-repeating">6</span>
+              </div>
+              <input type="range" id="max-repeating" min="3" max="8" value="6" step="1" class="custom-slider">
+              <span class="control-hint">Guarantees >= 3 unique players between every roster pair</span>
+            </div>
+          </div>
+
+          <!-- Advanced Toggle -->
+          <details class="advanced-details">
+            <summary class="advanced-summary">Advanced Simulation Parameters (Monte Carlo Scale & Pruning)</summary>
+            <div class="advanced-grid">
+              <div class="input-field">
+                <label for="num-candidates">MILP Candidates (N)</label>
+                <input type="number" id="num-candidates" value="500" min="50" max="1000" class="num-input">
+              </div>
+              <div class="input-field">
+                <label for="num-field">Opponent Field Size (M)</label>
+                <input type="number" id="num-field" value="10000" min="1000" max="25000" class="num-input">
+              </div>
+              <div class="input-field">
+                <label for="num-trials">Game Outcome Trials (T)</label>
+                <input type="number" id="num-trials" value="5000" min="500" max="10000" class="num-input">
+              </div>
+              <div class="input-field">
+                <label for="randomness-dev">Variance Dev Multiplier</label>
+                <input type="number" id="randomness-dev" value="0.25" min="0.05" max="0.50" step="0.05"
+                  class="num-input">
+              </div>
+              <div class="checkbox-field">
+                <input type="checkbox" id="zero-unprojected" checked>
+                <label for="zero-unprojected">Zero-out unprojected players (SaberSim standard)</label>
+              </div>
+              <div class="checkbox-field">
+                <input type="checkbox" id="strict-caps">
+                <label for="strict-caps">Strict exposure caps enforcement (fail on cap overage)</label>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Launch Action Bar -->
+      <div class="action-bar">
+        <button id="btn-optimize" class="btn btn-primary btn-large" disabled>
+          <span id="btn-optimize-text">Upload Entries, Salaries, & Projections to Optimize</span>
+        </button>
+      </div>
+
+      <!-- Section 3: Execution Progress Tracker -->
+      <section id="progress-section" class="card glass-card progress-section hidden">
+        <div class="progress-header-row">
+          <div>
+            <h3 id="progress-stage-title">Simulating Monte Carlo Tournament Field...</h3>
+            <span id="progress-stage-desc" class="progress-sub">Executing 4-stage quantitative pipeline</span>
+          </div>
+          <span id="progress-pct" class="progress-pct-badge">0%</span>
+        </div>
+
+        <div class="progress-bar-container">
+          <div id="progress-bar-fill" class="progress-bar-fill"></div>
+        </div>
+
+        <div class="stages-indicator">
+          <div class="stage-step active" id="step-stage-1">
+            <span class="dot"></span> 1. Candidate Pool (MILP)
+          </div>
+          <div class="stage-step" id="step-stage-2">
+            <span class="dot"></span> 2. Opponent Field (M=10k)
+          </div>
+          <div class="stage-step" id="step-stage-3">
+            <span class="dot"></span> 3. Correlated Engine (T=5k)
+          </div>
+          <div class="stage-step" id="step-stage-4">
+            <span class="dot"></span> 4. Portfolio Selector (K=150)
+          </div>
+        </div>
+
+        <div class="log-console-container">
+          <div class="log-console-header">
+            <span>Execution Terminal Stream</span>
+            <button id="btn-clear-logs" class="btn-text">Clear</button>
+          </div>
+          <div id="log-console" class="log-console">
+            <div class="log-line info">[SYS] Initializing engine session...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: Export & Analytics Dashboard -->
+      <section id="results-section" class="card glass-card results-section hidden">
+        <div class="results-banner">
+          <div class="success-icon-wrap">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          </div>
+          <div>
+            <h2 class="results-title">Tournament Portfolio Ready for Upload!</h2>
+            <p class="results-desc">Lineups successfully mapped into contest template format with preserved entry IDs.
+            </p>
+          </div>
+        </div>
+
+        <!-- Download Action -->
+        <div class="download-action-row">
+          <button id="btn-download" class="btn btn-download btn-huge">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span id="download-btn-text">Download Completed Lineups CSV</span>
+          </button>
+          <button id="btn-reset" class="btn btn-secondary">Optimize Another Contest</button>
+        </div>
+
+        <!-- Portfolio Metrics Summary -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-num" id="res-num-lineups">150</span>
+            <span class="metric-caption">Exported Lineups</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-num" id="res-unique-players">-</span>
+            <span class="metric-caption">Unique Players Used</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-num" id="res-primary-stack">80%</span>
+            <span class="metric-caption">Primary Stack Volume</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-num" id="res-repeating">≤ 6</span>
+            <span class="metric-caption">Uniqueness Bound (≥ 3 Diff)</span>
+          </div>
+        </div>
+
+        <!-- Top Exposures Breakdown -->
+        <div class="exposures-container">
+          <div class="exposures-header">
+            <h3>Player Exposure Distribution (Top 15 Starters)</h3>
+            <span class="exposures-subtitle">Audited against 25% QB / 25% Skill / 20% DEF caps</span>
+          </div>
+          <div class="table-wrap">
+            <table class="exposures-table">
+              <thead>
+                <tr>
+                  <th>Player Name</th>
+                  <th>Rostered Entries</th>
+                  <th>Exposure</th>
+                  <th>Visual Distribution</th>
+                </tr>
+              </thead>
+              <tbody id="exposures-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div>NFL DFS Optimization Engine &copy; 2026 | Built for FanDuel and DraftKings MME Tournaments</div>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>

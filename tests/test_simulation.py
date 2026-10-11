@@ -229,5 +229,34 @@ def test_single_game_explicit_user_caps_preserved(tmp_path: Path):
         sel_custom.select_portfolio(candidates, dummy_roi, dummy_wins, dummy_top1)
 
 
+def test_game_pace_correlation_in_engine(mock_fanduel_files):
+    """Verifies that teams playing in the same game have positive covariance in simulated scores."""
+    config, _, _, _ = mock_fanduel_files
+    config.num_sim_trials = 2000
+    config.random_seed = 123
+
+    loader = FanDuelDataLoader(config)
+    optimizer = loader.load_and_sanitize()
+    players = list(optimizer.player_pool.all_players)
+
+    engine = CorrelatedGameEngine(players, config)
+    sim_points = engine.simulate_game_trials()
+
+    # Find starting QBs for KC (home), BUF (away, same game as KC), and PHI (different game)
+    kc_qb_idx = next(i for i, p in enumerate(players) if p.full_name == "KC QB1")
+    buf_qb_idx = next(i for i, p in enumerate(players) if p.full_name == "BUF QB1")
+    phi_qb_idx = next(i for i, p in enumerate(players) if p.full_name == "PHI QB1")
+
+    # Correlation between opponents in the same game
+    corr_same_game = np.corrcoef(sim_points[kc_qb_idx], sim_points[buf_qb_idx])[0, 1]
+
+    # Correlation between teams in different games
+    corr_diff_game = np.corrcoef(sim_points[kc_qb_idx], sim_points[phi_qb_idx])[0, 1]
+
+    # Opponents in the same game share game_z pace shocks, so corr_same_game should be positive
+    assert corr_same_game > 0.05, f"Expected positive game-pace correlation, got {corr_same_game}"
+    assert corr_same_game > corr_diff_game, f"Same game corr ({corr_same_game}) should exceed diff game corr ({corr_diff_game})"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
