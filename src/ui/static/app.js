@@ -70,7 +70,6 @@
   const numFieldInput = document.getElementById('num-field');
   const numTrialsInput = document.getElementById('num-trials');
   const randomnessDevInput = document.getElementById('randomness-dev');
-  const zeroUnprojectedInput = document.getElementById('zero-unprojected');
   const strictCapsInput = document.getElementById('strict-caps');
 
   // Progress Section
@@ -357,7 +356,7 @@
         num_field: parseInt(numFieldInput.value, 10),
         num_trials: parseInt(numTrialsInput.value, 10),
         randomness: parseFloat(randomnessDevInput.value),
-        zero_unprojected: zeroUnprojectedInput.checked,
+        zero_unprojected: true,
         strict_caps: strictCapsInput.checked,
       },
     };
