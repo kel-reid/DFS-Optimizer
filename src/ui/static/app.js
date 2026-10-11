@@ -469,7 +469,8 @@
     resRepeating.textContent = `≤ ${maxRepeatingSlider.value}`;
 
     // Populate Exposures Table
-    renderExposuresTable(summary.top_exposures || []);
+    const totalCount = summary.num_lineups || numLineupsSlider.value;
+    renderExposuresTable(summary.top_exposures || [], totalCount);
   }
 
   function onJobFailed(jobData) {
@@ -496,7 +497,8 @@
     return name;
   }
 
-  function renderExposuresTable(exposures) {
+  function renderExposuresTable(exposures, totalCount) {
+    const denom = totalCount || numLineupsSlider.value;
     exposuresTableBody.innerHTML = '';
     if (!exposures || exposures.length === 0) {
       exposuresTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:2rem;">No exposure data available.</td></tr>';
@@ -512,7 +514,7 @@
       nameCell.textContent = displayName;
 
       const countCell = document.createElement('td');
-      countCell.textContent = `${item.count} / ${numLineupsSlider.value}`;
+      countCell.textContent = `${item.count} / ${denom}`;
 
       const pctCell = document.createElement('td');
       const strong = document.createElement('strong');

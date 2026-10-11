@@ -410,7 +410,7 @@ class DFSOptimizerHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         content_type = self.headers.get("Content-Type", "")
-        if "application/json" not in content_type:
+        if content_type.split(";", 1)[0].strip().lower() != "application/json":
             self.send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Content-Type must be application/json")
             return
 

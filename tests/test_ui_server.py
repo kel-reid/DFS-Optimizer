@@ -374,6 +374,15 @@ def test_http_api_optimize_endpoint_requires_json_content_type():
     )
     assert status == 415
 
+    # Parameter stuffing / substring bypass attempt
+    status_crafted, _, _ = simulate_request(
+        "POST",
+        "/api/optimize",
+        body=b'{"test": 1}',
+        headers={"Content-Type": "text/plain;foo=application/json"},
+    )
+    assert status_crafted == 415
+
 
 def test_execute_optimization_job_clamps_game_stack_ratio(tmp_path: Path):
     """Verifies that lowering stack_ratio in options clamps game_stack_ratio so validation does not fail."""
