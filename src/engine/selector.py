@@ -59,7 +59,7 @@ class PortfolioSelector:
         metric = getattr(self.config, "selection_metric", "roi").lower()
         if metric == "ceiling" and cand_ceilings is not None:
             # Sort primarily by 99.9th percentile ceiling score descending, secondary win_counts, top1_rates
-            sort_order = np.lexsort((-sim_roi, -win_counts, -top1_rates, -cand_ceilings))
+            sort_order = np.lexsort((-sim_roi, -top1_rates, -win_counts, -cand_ceilings))
             metric_desc = "99.9th Percentile Ceiling Score (Q_0.999)"
         elif metric == "win_rate":
             # Sort primarily by 1st place win rate / counts descending, secondary top1_rates, sim_roi

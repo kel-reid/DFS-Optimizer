@@ -22,7 +22,7 @@ from src.config import SimOptimizerConfig
 from src.data.projections import apply_forward_projections
 from src.engine.selector import PortfolioSelector
 from src.engine.simulator import SimulationResult
-from src.engine.solver import GameBringBackStack
+from src.engine.solver import CandidatePoolGenerator, GameBringBackStack
 
 
 def test_simulation_result_tuple_subclass_compatibility() -> None:
@@ -109,6 +109,18 @@ def test_portfolio_selector_ceiling_sort_precedence() -> None:
     sel_ceil = PortfolioSelector(cfg_ceil)
     selected_ceil = sel_ceil.select_portfolio(candidates, sim_roi, win_counts, top1_rates, cand_ceilings)
     assert selected_ceil[0] == lineup_b
+
+    # 3. Tie-breaker when ceilings are identical: win_counts takes precedence over top1_rates
+    # Candidate C has 10 wins (lower top1_rates=2.0), Candidate D has 5 wins (higher top1_rates=8.0)
+    lineup_c = Lineup([lp1, lp2, lp3])
+    lineup_d = Lineup([lp1, lp2, lp3])
+    tie_candidates = [lineup_c, lineup_d]
+    tie_roi = np.array([50.0, 50.0])
+    tie_wins = np.array([10, 5])
+    tie_top1 = np.array([2.0, 8.0])
+    tie_ceil = np.array([200.0, 200.0])
+    selected_tie = sel_ceil.select_portfolio(tie_candidates, tie_roi, tie_wins, tie_top1, tie_ceil)
+    assert selected_tie[0] == lineup_c
 
 
 def test_portfolio_selector_win_rate_metric() -> None:
@@ -199,14 +211,15 @@ def test_game_bring_back_stack_double_stack_and_onslaught() -> None:
 
 
 def test_apply_forward_projections_with_ownership_and_candidate_constraint(tmp_path: Path) -> None:
-    """Verifies ownership parsing from projection feed and enforcement of cumulative ownership cap."""
+    """Verifies ownership parsing from projection feed, including sub-1.0% values in percent-scaled feeds."""
     proj_csv = tmp_path / "projections_with_ownership.csv"
     proj_csv.write_text(
         "first_name,last_name,position,team,ppg_projection,ownership_projection\n"
         "Patrick,Mahomes,QB,KC,24.5,25.0\n"
         "Travis,Kelce,TE,KC,18.0,30.0\n"
         "Derrick,Henry,RB,BAL,20.0,35.0\n"
-        "Davante,Adams,WR,LV,17.5,15.0\n",
+        "Davante,Adams,WR,LV,17.5,15.0\n"
+        "Kendrick,Bourne,WR,NE,10.0,0.8\n",
         encoding="utf-8",
     )
 
@@ -216,14 +229,40 @@ def test_apply_forward_projections_with_ownership_and_candidate_constraint(tmp_p
         Player("2", "Travis", "Kelce", ["TE"], "KC", 7000, 15.0),
         Player("3", "Derrick", "Henry", ["RB"], "BAL", 8500, 18.0),
         Player("4", "Davante", "Adams", ["WR"], "LV", 7500, 16.0),
+        Player("5", "Kendrick", "Bourne", ["WR"], "NE", 5000, 10.0),
     ]
     optimizer.player_pool.load_players(players)
 
     updated, _ = apply_forward_projections(optimizer, proj_csv, zero_unprojected=False)
-    assert updated == 4
+    assert updated == 5
 
     p_map = {p.full_name: p for p in optimizer.player_pool.filtered_players}
     assert p_map["Patrick Mahomes"].projected_ownership == 0.25
     assert p_map["Travis Kelce"].projected_ownership == 0.30
     assert p_map["Derrick Henry"].projected_ownership == 0.35
     assert p_map["Davante Adams"].projected_ownership == 0.15
+    # Verify sub-1.0 value correctly scaled to fractional (0.8% -> 0.008, NOT 0.8)
+    assert pytest.approx(p_map["Kendrick Bourne"].projected_ownership, abs=1e-5) == 0.008
+
+
+def test_candidate_pool_ownership_normalization_helper() -> None:
+    """Verifies _calculate_max_avg_ownership correctly converts both large and small percentage caps."""
+    # 115.0% across 9 slots -> (1.15) / 9 = ~0.12777
+    res_115 = CandidatePoolGenerator._calculate_max_avg_ownership(115.0, 9)
+    assert res_115 is not None
+    assert pytest.approx(res_115, abs=1e-4) == 1.15 / 9
+
+    # 5.0% across 9 slots -> (0.05) / 9 = ~0.005555
+    res_5 = CandidatePoolGenerator._calculate_max_avg_ownership(5.0, 9)
+    assert res_5 is not None
+    assert pytest.approx(res_5, abs=1e-5) == 0.05 / 9
+
+    # 0.05 fraction across 9 slots -> 0.05 / 9
+    res_frac = CandidatePoolGenerator._calculate_max_avg_ownership(0.05, 9)
+    assert res_frac is not None
+    assert pytest.approx(res_frac, abs=1e-5) == 0.05 / 9
+
+    # None or non-positive
+    assert CandidatePoolGenerator._calculate_max_avg_ownership(None, 9) is None
+    assert CandidatePoolGenerator._calculate_max_avg_ownership(0.0, 9) is None
+    assert CandidatePoolGenerator._calculate_max_avg_ownership(-1.0, 9) is None

@@ -138,6 +138,28 @@ class CandidatePoolGenerator:
         self.players: List[Player] = list(optimizer.player_pool.filtered_players)
         self.player_to_idx: Dict[str, int] = {str(p.id): idx for idx, p in enumerate(self.players)}
 
+    @staticmethod
+    def _calculate_max_avg_ownership(max_total_ownership: Optional[float], total_slots: int) -> Optional[float]:
+        """
+        Normalizes cumulative lineup ownership cap to fractional average per roster slot for pydfs.
+        If cumulative ownership is expressed as percentage (> 1.0, e.g. 115.0 or 5.0), converts to
+        fraction (e.g. 1.15 or 0.05) before dividing across total roster slots.
+        """
+        if max_total_ownership is None or max_total_ownership <= 0 or total_slots <= 0:
+            return None
+        cum_frac = max_total_ownership / 100.0 if max_total_ownership > 1.0 else max_total_ownership
+        return cum_frac / total_slots
+
+    @classmethod
+    def _apply_ownership_cap_if_available(cls, optimizer: LineupOptimizer, max_avg_own: Optional[float]) -> bool:
+        if max_avg_own is None or max_avg_own <= 0:
+            return False
+        has_own = any(p.projected_ownership is not None for p in optimizer.player_pool.filtered_players)
+        if has_own:
+            optimizer.set_projected_ownership(max_projected_ownership=max_avg_own)
+            return True
+        return False
+
     def generate_candidate_pool(self) -> Tuple[List[Lineup], np.ndarray]:
         """
         Solves 500 candidates:
@@ -207,14 +229,9 @@ class CandidatePoolGenerator:
             cand_max_exp = 0.35
 
         max_own = getattr(self.config, "max_total_ownership", None)
-        if max_own is not None and max_own > 0:
-            has_own = any(p.projected_ownership is not None for p in self.optimizer.player_pool.filtered_players)
-            if has_own:
-                avg_own = max_own / total_slots
-                if avg_own > 1.0:
-                    avg_own /= 100.0
-                self.optimizer.set_projected_ownership(max_projected_ownership=avg_own)
-                logger.info("Enforcing cumulative projected ownership cap: <= %.1f%% (avg <= %.2f%%/slot)", max_own, avg_own * 100)
+        max_avg_own = self._calculate_max_avg_ownership(max_own, total_slots)
+        if self._apply_ownership_cap_if_available(self.optimizer, max_avg_own):
+            logger.info("Enforcing cumulative projected ownership cap: <= %.1f%% (avg <= %.2f%%/slot)", max_own, (max_avg_own or 0.0) * 100)
 
         primary_size = getattr(self.config, "primary_stack_size", 1)
         bb_size = getattr(self.config, "bring_back_size", 1)
@@ -259,13 +276,7 @@ class CandidatePoolGenerator:
             opt_primary.set_fantasy_points_strategy(
                 RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
             )
-            if max_own is not None and max_own > 0:
-                has_own = any(p.projected_ownership is not None for p in opt_primary.player_pool.filtered_players)
-                if has_own:
-                    avg_own = max_own / total_slots
-                    if avg_own > 1.0:
-                        avg_own /= 100.0
-                    opt_primary.set_projected_ownership(max_projected_ownership=avg_own)
+            self._apply_ownership_cap_if_available(opt_primary, max_avg_own)
             if not is_single_game:
                 opt_primary.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
                 pass_stack: List[Any] = ["QB"] + [("WR", "TE")] * primary_size
@@ -307,13 +318,7 @@ class CandidatePoolGenerator:
             opt_unconstrained.set_fantasy_points_strategy(
                 RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
             )
-            if max_own is not None and max_own > 0:
-                has_own = any(p.projected_ownership is not None for p in opt_unconstrained.player_pool.filtered_players)
-                if has_own:
-                    avg_own = max_own / total_slots
-                    if avg_own > 1.0:
-                        avg_own /= 100.0
-                    opt_unconstrained.set_projected_ownership(max_projected_ownership=avg_own)
+            self._apply_ownership_cap_if_available(opt_unconstrained, max_avg_own)
             if not is_single_game:
                 opt_unconstrained.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
             if len(opt_unconstrained.player_pool.available_teams) >= 3:

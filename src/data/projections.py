@@ -135,6 +135,11 @@ def apply_forward_projections(
             own_col = candidate_col
             break
 
+    own_is_percent = False
+    if own_col:
+        _own_num = pd.to_numeric(proj_df[own_col].astype(str).str.replace("%", "", regex=False).str.strip(), errors="coerce")
+        own_is_percent = bool((_own_num.max(skipna=True) or 0.0) > 1.0)
+
     player_map: Dict[str, float] = {}
     player_own_map: Dict[str, float] = {}
     def_map: Dict[str, float] = {}
@@ -189,7 +194,7 @@ def apply_forward_projections(
         if own_col and own_col in row and pd.notna(row[own_col]) and str(row[own_col]).strip() != "":
             try:
                 raw_own = float(str(row[own_col]).strip().replace("%", ""))
-                own_val = raw_own / 100.0 if raw_own > 1.0 else raw_own
+                own_val = raw_own / 100.0 if own_is_percent else raw_own
             except (ValueError, TypeError):
                 own_val = None
 
