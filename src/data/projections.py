@@ -128,8 +128,22 @@ def apply_forward_projections(
         logger.warning("Could not determine fantasy score column in %s; skipping projection merge.", proj_path)
         return 0, 0
 
+    # Determine ownership column if present
+    own_col = None
+    for candidate_col in ["ownership_projection", "ownership", "projected_ownership", "own", "Ownership", "Proj_Own", "proj_own"]:
+        if candidate_col in proj_df.columns:
+            own_col = candidate_col
+            break
+
+    own_is_percent = False
+    if own_col:
+        _own_num = pd.to_numeric(proj_df[own_col].astype(str).str.replace("%", "", regex=False).str.strip(), errors="coerce")
+        own_is_percent = bool((_own_num.max(skipna=True) or 0.0) > 1.0)
+
     player_map: Dict[str, float] = {}
+    player_own_map: Dict[str, float] = {}
     def_map: Dict[str, float] = {}
+    def_own_map: Dict[str, float] = {}
     projected_positions: set[str] = set()
 
     has_first_last = "first_name" in proj_df.columns and "last_name" in proj_df.columns
@@ -176,6 +190,14 @@ def apply_forward_projections(
             except (ValueError, TypeError):
                 val = None
 
+        own_val = None
+        if own_col and own_col in row and pd.notna(row[own_col]) and str(row[own_col]).strip() != "":
+            try:
+                raw_own = float(str(row[own_col]).strip().replace("%", ""))
+                own_val = raw_own / 100.0 if own_is_percent else raw_own
+            except (ValueError, TypeError):
+                own_val = None
+
         if val is None:
             # Fallback for ragged CSV rows (e.g. D/ST rows with fewer columns than offensive rows)
             # Scan trailing columns in reverse, skipping recognized non-projection columns (salary, team, etc.)
@@ -206,13 +228,21 @@ def apply_forward_projections(
             projected_positions.update(["D", "DEF", "DST"])
             if t_val:
                 def_map[normalize_name(t_val)] = val
+                if own_val is not None:
+                    def_own_map[normalize_name(t_val)] = own_val
             clean_team = p_val.replace("D/ST", "").replace("DST", "").replace("DEF", "").strip()
             if clean_team:
                 def_map[normalize_name(clean_team)] = val
+                if own_val is not None:
+                    def_own_map[normalize_name(clean_team)] = own_val
             if p_val:
                 def_map[normalize_name(p_val)] = val
+                if own_val is not None:
+                    def_own_map[normalize_name(p_val)] = own_val
         else:
             player_map[normalize_name(p_val)] = val
+            if own_val is not None:
+                player_own_map[normalize_name(p_val)] = own_val
 
     # Augment projected_positions with positions from matched pool players
     if def_map:
@@ -236,6 +266,8 @@ def apply_forward_projections(
             for cand in [d_key, t_key] + d_key.split():
                 if cand in def_map:
                     player.fppg = def_map[cand]
+                    if cand in def_own_map:
+                        player.projected_ownership = def_own_map[cand]
                     updated_count += 1
                     found = True
                     break
@@ -248,6 +280,8 @@ def apply_forward_projections(
             k = normalize_name(player.full_name)
             if k in player_map:
                 player.fppg = player_map[k]
+                if k in player_own_map:
+                    player.projected_ownership = player_own_map[k]
                 updated_count += 1
             else:
                 pos_covered = any(pos in projected_positions for pos in player.positions)

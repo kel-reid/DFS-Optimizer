@@ -49,6 +49,7 @@ fanduel:
     num_field_lineups: 10000
     num_sim_trials: 5000
     num_selected_lineups: 150
+    selection_metric: "roi"
   exposure_caps:
     max_qb_exposure: 0.25
     max_rb_exposure: 0.25
@@ -59,6 +60,10 @@ fanduel:
   solver:
     stack_ratio: 0.80
     game_stack_ratio: 0.40
+    primary_stack_size: 1
+    bring_back_size: 1
+    include_team_defense_stack: false
+    max_total_ownership: null
     max_repeating_players: 6
     randomness_deviation: 0.25
     exclude_out_injured: true
@@ -75,6 +80,7 @@ draftkings:
     num_sim_trials: 5000
     num_selected_lineups: 150
     num_lineups: 150
+    selection_metric: "roi"
   exposure_caps:
     max_qb_exposure: 0.25
     max_rb_exposure: 0.25
@@ -85,6 +91,10 @@ draftkings:
   solver:
     stack_ratio: 0.80
     game_stack_ratio: 0.40
+    primary_stack_size: 1
+    bring_back_size: 1
+    include_team_defense_stack: false
+    max_total_ownership: null
     max_repeating_players: 6
     randomness_deviation: 0.25
     exclude_out_injured: true
