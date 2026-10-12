@@ -225,11 +225,44 @@ python src/build_draftkings_lineups.py
 python src/build_draftkings_lineups.py \
   --players-csv data/players/DKSalaries.csv \
   --template-csv data/templates/DKEntries.csv \
-  --num-candidates 500 \
   --num-trials 5000 \
   --entry-fee 3.00
 ```
 *Export destination: `data/output/Completed-DKEntries.csv`.*
+
+#### GPP Tournament Ceiling Optimization & Multi-Stacking
+
+To target top 1st–5th percentile finishes in large-field GPP contests, use the advanced stacking and ceiling metrics:
+
+```bash
+# FanDuel GPP Ceiling Run (Double Stack + Bring-Back + Team DEF Onslaught + 99.9th Percentile Ceiling)
+python src/build_fanduel_lineups.py \
+  --week 5 \
+  --slate main-slate \
+  --selection-metric ceiling \
+  --primary-stack-size 2 \
+  --bring-back-size 1 \
+  --team-defense-stack \
+  --max-total-ownership 115.0 \
+  --num-candidates 2500 \
+  --game-stack-ratio 0.65
+
+# DraftKings GPP Ceiling Run
+python src/build_draftkings_lineups.py \
+  --selection-metric ceiling \
+  --primary-stack-size 2 \
+  --bring-back-size 1 \
+  --team-defense-stack \
+  --max-total-ownership 115.0 \
+  --num-candidates 2500
+```
+
+*Key GPP Options:*
+* `--selection-metric {roi,ceiling,win_rate}`: Selects lineups based on 99.9th percentile ceiling ($Q_{0.999}$), 1st place rate, or mean simulated ROI.
+* `--primary-stack-size <int>`: Number of pass-catchers paired with QB (`1` for single stack, `2` for double stack).
+* `--bring-back-size <int>`: Number of opposing pass-catchers for bring-back in game stacks (`0` to disable, `1` standard, `2` double bring-back).
+* `--team-defense-stack`: Stacks QB with same-team Defense for game-script blowout onslaughts.
+* `--max-total-ownership <float>`: Cumulative projected ownership cap per lineup (e.g. `115.0`) to avoid duplicated chalk.
 
 
 ## Quality Verification & Tests

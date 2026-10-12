@@ -121,6 +121,37 @@ def parse_arguments() -> SimOptimizerConfig:
         default=default_cfg.strict_exposure_caps,
         help="Strictly enforce exposure caps; fail if candidate pool cannot fulfill K lineups without cap overage",
     )
+    parser.add_argument(
+        "--selection-metric",
+        type=str,
+        choices=["roi", "ceiling", "win_rate"],
+        default=default_cfg.selection_metric,
+        help="Portfolio selection metric: 'roi' (mean simulated ROI), 'ceiling' (99.9th percentile score), or 'win_rate' (1st place rate).",
+    )
+    parser.add_argument(
+        "--primary-stack-size",
+        type=int,
+        default=default_cfg.primary_stack_size,
+        help="Number of primary pass-catchers (WR/TE) paired with QB (default: 1; 2 for double stack).",
+    )
+    parser.add_argument(
+        "--bring-back-size",
+        type=int,
+        default=default_cfg.bring_back_size,
+        help="Number of opposing pass-catchers for bring-back in game stacks (default: 1; 0 to disable, 2 for double bring-back).",
+    )
+    parser.add_argument(
+        "--team-defense-stack",
+        action="store_true",
+        default=default_cfg.include_team_defense_stack,
+        help="Stack QB with same-team Defense for game-script team onslaughts.",
+    )
+    parser.add_argument(
+        "--max-total-ownership",
+        type=float,
+        default=default_cfg.max_total_ownership,
+        help="Maximum cumulative projected ownership per lineup (e.g. 115.0).",
+    )
     parser.add_argument("--slate", type=str, default=default_cfg.slate, help="Target slate identifier (e.g. sunday-night, main-slate).")
     parser.add_argument("--week", type=str, default=default_cfg.week, help="NFL Week (e.g. 5, 05, week-05).")
     parser.add_argument("--date", type=str, default=default_cfg.slate_date, help="Slate date in YYYY-MM-DD format (e.g. 2026-10-04).")
@@ -177,6 +208,11 @@ def parse_arguments() -> SimOptimizerConfig:
         exclude_out_injured=exclude_injured,
         strict_exposure_caps=args.strict_caps,
         zero_unprojected=zero_unproj,
+        selection_metric=args.selection_metric,
+        primary_stack_size=args.primary_stack_size,
+        bring_back_size=args.bring_back_size,
+        include_team_defense_stack=args.team_defense_stack,
+        max_total_ownership=args.max_total_ownership,
         slate=args.slate,
         week=norm_week,
         slate_date=args.date,
@@ -234,15 +270,19 @@ def run_fanduel_pipeline(
     game_engine = CorrelatedGameEngine(players, config)
     sim_points = game_engine.simulate_game_trials()
 
-    sim_roi, win_counts, top1_rates = game_engine.score_and_rank_candidates(
+    sim_res = game_engine.score_and_rank_candidates(
         candidates_matrix, field_matrix, sim_points
     )
+    sim_roi, win_counts, top1_rates = sim_res
 
     # 5. Stage 4: Portfolio Selection (Exposure Ceilings)
     if progress_callback:
-        progress_callback(90, f"Stage 4: Selecting {config.num_selected_lineups} lineups maximizing simulated ROI...")
+        metric_label = "simulated ROI" if config.selection_metric == "roi" else ("99.9th percentile ceiling" if config.selection_metric == "ceiling" else "win rate")
+        progress_callback(90, f"Stage 4: Selecting {config.num_selected_lineups} lineups maximizing {metric_label}...")
     selector = PortfolioSelector(config)
-    selected_lineups = selector.select_portfolio(candidates, sim_roi, win_counts, top1_rates)
+    selected_lineups = selector.select_portfolio(
+        candidates, sim_roi, win_counts, top1_rates, cand_ceilings=getattr(sim_res, "ceilings", None)
+    )
 
     # 6. Stage 4: Map Lineups into pandas DataFrame and Export Upload CSV
     if progress_callback:

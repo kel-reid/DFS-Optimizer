@@ -108,12 +108,19 @@ class BaseOptimizerConfig:
     # Candidate generation solver constraints
     stack_ratio: float = 0.80        # 80% primary stacked / 20% unconstrained
     game_stack_ratio: float = 0.40   # 40% game stacked with bring-back (QB + same WR/TE + opp WR/TE)
+    primary_stack_size: int = 1      # Number of primary pass-catchers with QB (1 = single, 2 = double stack)
+    bring_back_size: int = 1         # Number of opposing pass-catchers for bring-back (0 = none, 1 = single, 2 = double)
+    include_team_defense_stack: bool = False  # Stacks same-team DEF with QB for team onslaughts
+    max_total_ownership: Optional[float] = None  # Max cumulative projected ownership per lineup (e.g. 115.0%)
     max_repeating_players: int = 6   # Guarantees >= 3 unique players between every pair of candidates
     randomness_deviation: float = 0.25  # ±25% uniform random projection jitter during MILP solving
     exclude_out_injured: bool = True # Prune confirmed OUT, IR, and Doubtful players
     strict_exposure_caps: bool = False # If True, fail if candidate pool cannot fulfill K lineups under hard caps
     zero_unprojected: bool = True    # SaberSim standard: zeroes out unprojected / N/A players
     random_seed: int = 42            # Seed for reproducible Monte Carlo trials
+
+    # Portfolio selection strategy
+    selection_metric: str = "roi"    # "roi" (mean simulated ROI), "ceiling" (99.9th percentile), or "win_rate" (1st place rate)
 
     # Slate configuration & format
     slate: Optional[str] = None       # Specific slate name (e.g. "sunday-night", "main-slate")
@@ -150,6 +157,19 @@ class BaseOptimizerConfig:
             raise ValueError(
                 f"Invalid game_stack_ratio ({self.game_stack_ratio}) > stack_ratio ({self.stack_ratio}). "
                 "Game stack ratio cannot exceed total stack ratio."
+            )
+
+        if self.primary_stack_size < 1:
+            raise ValueError(f"Invalid primary_stack_size: {self.primary_stack_size}. Must be >= 1.")
+        if self.bring_back_size < 0:
+            raise ValueError(f"Invalid bring_back_size: {self.bring_back_size}. Must be >= 0.")
+        if self.selection_metric not in ("roi", "ceiling", "win_rate"):
+            raise ValueError(
+                f"Invalid selection_metric: '{self.selection_metric}'. Must be 'roi', 'ceiling', or 'win_rate'."
+            )
+        if self.max_total_ownership is not None and self.max_total_ownership <= 0.0:
+            raise ValueError(
+                f"Invalid max_total_ownership: {self.max_total_ownership}. Must be > 0.0."
             )
 
 
@@ -216,15 +236,19 @@ class SimOptimizerConfig(BaseOptimizerConfig):
             if k in exp_cfg:
                 params[k] = float(exp_cfg[k])
 
-        for k in ["stack_ratio", "game_stack_ratio", "randomness_deviation"]:
-            if k in solver_cfg:
+        for k in ["stack_ratio", "game_stack_ratio", "randomness_deviation", "max_total_ownership"]:
+            if k in solver_cfg and solver_cfg[k] is not None:
                 params[k] = float(solver_cfg[k])
-        for k in ["max_repeating_players"]:
-            if k in solver_cfg:
+        for k in ["max_repeating_players", "primary_stack_size", "bring_back_size"]:
+            if k in solver_cfg and solver_cfg[k] is not None:
                 params[k] = int(solver_cfg[k])
-        for k in ["exclude_out_injured", "strict_exposure_caps", "zero_unprojected"]:
-            if k in solver_cfg:
+        for k in ["exclude_out_injured", "strict_exposure_caps", "zero_unprojected", "include_team_defense_stack"]:
+            if k in solver_cfg and solver_cfg[k] is not None:
                 params[k] = bool(solver_cfg[k])
+        if "selection_metric" in solver_cfg and solver_cfg["selection_metric"] is not None:
+            params["selection_metric"] = str(solver_cfg["selection_metric"])
+        if "selection_metric" in sim_cfg and sim_cfg["selection_metric"] is not None:
+            params["selection_metric"] = str(sim_cfg["selection_metric"])
 
         if "random_seed" in global_cfg:
             params["random_seed"] = int(global_cfg["random_seed"])
@@ -239,6 +263,11 @@ class SimOptimizerConfig(BaseOptimizerConfig):
             "DFS_NUM_LINEUPS": ("num_selected_lineups", int),
             "DFS_STACK_RATIO": ("stack_ratio", float),
             "DFS_GAME_STACK_RATIO": ("game_stack_ratio", float),
+            "DFS_PRIMARY_STACK_SIZE": ("primary_stack_size", int),
+            "DFS_BRING_BACK_SIZE": ("bring_back_size", int),
+            "DFS_TEAM_DEFENSE_STACK": ("include_team_defense_stack", lambda v: str(v).lower() in ("1", "true", "yes")),
+            "DFS_MAX_TOTAL_OWNERSHIP": ("max_total_ownership", float),
+            "DFS_SELECTION_METRIC": ("selection_metric", str),
             "DFS_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_RANDOMNESS": ("randomness_deviation", float),
             "DFS_ZERO_UNPROJECTED": ("zero_unprojected", lambda v: str(v).lower() in ("1", "true", "yes")),
@@ -429,15 +458,19 @@ class DraftKingsConfig(BaseOptimizerConfig):
         if "max_dst_exposure" in exp_cfg:
             params["max_def_exposure"] = float(exp_cfg["max_dst_exposure"])
 
-        for k in ["stack_ratio", "game_stack_ratio", "randomness_deviation"]:
-            if k in solver_cfg:
+        for k in ["stack_ratio", "game_stack_ratio", "randomness_deviation", "max_total_ownership"]:
+            if k in solver_cfg and solver_cfg[k] is not None:
                 params[k] = float(solver_cfg[k])
-        for k in ["max_repeating_players"]:
-            if k in solver_cfg:
+        for k in ["max_repeating_players", "primary_stack_size", "bring_back_size"]:
+            if k in solver_cfg and solver_cfg[k] is not None:
                 params[k] = int(solver_cfg[k])
-        for k in ["exclude_out_injured", "strict_exposure_caps", "zero_unprojected"]:
-            if k in solver_cfg:
+        for k in ["exclude_out_injured", "strict_exposure_caps", "zero_unprojected", "include_team_defense_stack"]:
+            if k in solver_cfg and solver_cfg[k] is not None:
                 params[k] = bool(solver_cfg[k])
+        if "selection_metric" in solver_cfg and solver_cfg["selection_metric"] is not None:
+            params["selection_metric"] = str(solver_cfg["selection_metric"])
+        if "selection_metric" in sim_cfg and sim_cfg["selection_metric"] is not None:
+            params["selection_metric"] = str(sim_cfg["selection_metric"])
 
         if "random_seed" in global_cfg:
             params["random_seed"] = int(global_cfg["random_seed"])
@@ -461,6 +494,16 @@ class DraftKingsConfig(BaseOptimizerConfig):
             "DFS_DK_STACK_RATIO": ("stack_ratio", float),
             "DFS_GAME_STACK_RATIO": ("game_stack_ratio", float),
             "DFS_DK_GAME_STACK_RATIO": ("game_stack_ratio", float),
+            "DFS_PRIMARY_STACK_SIZE": ("primary_stack_size", int),
+            "DFS_DK_PRIMARY_STACK_SIZE": ("primary_stack_size", int),
+            "DFS_BRING_BACK_SIZE": ("bring_back_size", int),
+            "DFS_DK_BRING_BACK_SIZE": ("bring_back_size", int),
+            "DFS_TEAM_DEFENSE_STACK": ("include_team_defense_stack", lambda v: str(v).lower() in ("1", "true", "yes")),
+            "DFS_DK_TEAM_DEFENSE_STACK": ("include_team_defense_stack", lambda v: str(v).lower() in ("1", "true", "yes")),
+            "DFS_MAX_TOTAL_OWNERSHIP": ("max_total_ownership", float),
+            "DFS_DK_MAX_TOTAL_OWNERSHIP": ("max_total_ownership", float),
+            "DFS_SELECTION_METRIC": ("selection_metric", str),
+            "DFS_DK_SELECTION_METRIC": ("selection_metric", str),
             "DFS_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_DK_MAX_REPEATING": ("max_repeating_players", int),
             "DFS_RANDOMNESS": ("randomness_deviation", float),

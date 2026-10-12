@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from pydfs_lineup_optimizer import (
@@ -51,9 +51,15 @@ class GameBringBackStack(BaseStack):
         self,
         max_exposure: Optional[float] = None,
         max_exposure_per_team: Optional[Dict[str, float]] = None,
+        primary_stack_size: int = 1,
+        bring_back_size: int = 1,
+        include_team_defense: bool = False,
     ):
         self.max_exposure = max_exposure
         self.max_exposure_per_team = max_exposure_per_team or {}
+        self.primary_stack_size = max(1, primary_stack_size)
+        self.bring_back_size = max(0, bring_back_size)
+        self.include_team_defense = include_team_defense
 
     def build_stacks(self, players: List[Player], optimizer: LineupOptimizer) -> List[OptimizerStack]:
         players_by_team: Dict[str, List[Player]] = {}
@@ -82,14 +88,26 @@ class GameBringBackStack(BaseStack):
             same_pass = [p for p in t_players if any(pos in ("WR", "TE") for pos in p.positions) and p.fppg > 0.0]
             opp_pass = [p for p in opp_players if any(pos in ("WR", "TE") for pos in p.positions) and p.fppg > 0.0]
 
-            if not same_pass or not opp_pass:
+            min_primary = min(len(same_pass), self.primary_stack_size)
+            if min_primary < 1:
                 continue
 
-            groups = [
+            groups: List[PlayersGroup] = [
                 PlayersGroup(players=qbs, min_from_group=1),
-                PlayersGroup(players=same_pass, min_from_group=1),
-                PlayersGroup(players=opp_pass, min_from_group=1),
+                PlayersGroup(players=same_pass, min_from_group=min_primary),
             ]
+
+            if self.bring_back_size > 0:
+                min_bb = min(len(opp_pass), self.bring_back_size)
+                if min_bb < 1:
+                    continue
+                groups.append(PlayersGroup(players=opp_pass, min_from_group=min_bb))
+
+            if self.include_team_defense:
+                same_def = [p for p in t_players if any(pos in ("D", "DEF", "DST") for pos in p.positions) and p.fppg > 0.0]
+                if same_def:
+                    groups.append(PlayersGroup(players=same_def, min_from_group=1))
+
             all_groups.append(
                 NestedPlayersGroup(
                     groups=groups,
@@ -98,7 +116,8 @@ class GameBringBackStack(BaseStack):
             )
 
         if not all_groups:
-            return PositionsStack(["QB", ("WR", "TE")]).build_stacks(players, optimizer)
+            pass_stack: List[Any] = ["QB"] + [("WR", "TE")] * self.primary_stack_size
+            return PositionsStack(pass_stack).build_stacks(players, optimizer)
 
         return [OptimizerStack(groups=all_groups)]
 
@@ -169,7 +188,8 @@ class CandidatePoolGenerator:
             RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
         )
         if not is_single_game:
-            self.optimizer.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
+            opp_restricted = ["QB", "RB"] if getattr(self.config, "include_team_defense_stack", False) else ["QB", "RB", "WR", "TE"]
+            self.optimizer.restrict_positions_for_opposing_team(def_pos, opp_restricted)
         if len(self.optimizer.player_pool.available_teams) >= 3:
             self.optimizer.set_total_teams(min_teams=3)
         elif len(self.optimizer.player_pool.available_teams) == 2:
@@ -186,16 +206,39 @@ class CandidatePoolGenerator:
         else:
             cand_max_exp = 0.35
 
-        for p in self.optimizer.player_pool.filtered_players:
-            p.max_exposure = cand_max_exp if p.fppg > 0.0 else 0.0
+        max_own = getattr(self.config, "max_total_ownership", None)
+        if max_own is not None and max_own > 0:
+            has_own = any(p.projected_ownership is not None for p in self.optimizer.player_pool.filtered_players)
+            if has_own:
+                avg_own = max_own / total_slots
+                if avg_own > 1.0:
+                    avg_own /= 100.0
+                self.optimizer.set_projected_ownership(max_projected_ownership=avg_own)
+                logger.info("Enforcing cumulative projected ownership cap: <= %.1f%% (avg <= %.2f%%/slot)", max_own, avg_own * 100)
+
+        primary_size = getattr(self.config, "primary_stack_size", 1)
+        bb_size = getattr(self.config, "bring_back_size", 1)
+        def_stack = getattr(self.config, "include_team_defense_stack", False)
 
         candidates: List[Lineup] = []
         t0 = time.time()
 
         # Phase 1: Game Stack with Bring-Back
         if n_game_stack > 0:
-            logger.info("Solving %d game stacked candidate lineups (QB + same WR/TE + opp WR/TE)...", n_game_stack)
-            self.optimizer.add_stack(GameBringBackStack())
+            logger.info(
+                "Solving %d game stacked candidate lineups (QB + %d same-team WR/TE + %d opp WR/TE%s)...",
+                n_game_stack,
+                primary_size,
+                bb_size,
+                " + DEF" if def_stack else "",
+            )
+            self.optimizer.add_stack(
+                GameBringBackStack(
+                    primary_stack_size=primary_size,
+                    bring_back_size=bb_size,
+                    include_team_defense=def_stack,
+                )
+            )
             for i, lineup in enumerate(self.optimizer.optimize(n=n_game_stack), start=1):
                 candidates.append(lineup)
                 if i % 100 == 0 or i == n_game_stack:
@@ -216,9 +259,17 @@ class CandidatePoolGenerator:
             opt_primary.set_fantasy_points_strategy(
                 RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
             )
+            if max_own is not None and max_own > 0:
+                has_own = any(p.projected_ownership is not None for p in opt_primary.player_pool.filtered_players)
+                if has_own:
+                    avg_own = max_own / total_slots
+                    if avg_own > 1.0:
+                        avg_own /= 100.0
+                    opt_primary.set_projected_ownership(max_projected_ownership=avg_own)
             if not is_single_game:
                 opt_primary.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
-                opt_primary.add_stack(PositionsStack(["QB", ("WR", "TE")]))
+                pass_stack: List[Any] = ["QB"] + [("WR", "TE")] * primary_size
+                opt_primary.add_stack(PositionsStack(pass_stack))
             if len(opt_primary.player_pool.available_teams) >= 3:
                 opt_primary.set_total_teams(min_teams=3)
             elif len(opt_primary.player_pool.available_teams) == 2:
@@ -256,6 +307,13 @@ class CandidatePoolGenerator:
             opt_unconstrained.set_fantasy_points_strategy(
                 RandomFantasyPointsStrategy(self.config.randomness_deviation, self.config.randomness_deviation)
             )
+            if max_own is not None and max_own > 0:
+                has_own = any(p.projected_ownership is not None for p in opt_unconstrained.player_pool.filtered_players)
+                if has_own:
+                    avg_own = max_own / total_slots
+                    if avg_own > 1.0:
+                        avg_own /= 100.0
+                    opt_unconstrained.set_projected_ownership(max_projected_ownership=avg_own)
             if not is_single_game:
                 opt_unconstrained.restrict_positions_for_opposing_team(def_pos, ["QB", "RB", "WR", "TE"])
             if len(opt_unconstrained.player_pool.available_teams) >= 3:

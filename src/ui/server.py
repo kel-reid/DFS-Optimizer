@@ -201,6 +201,15 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
         zero_unprojected = bool(options.get("zero_unprojected", True))
         strict_caps = bool(options.get("strict_caps", False))
 
+        selection_metric = str(options.get("selection_metric", "roi"))
+        primary_stack_size = int(options.get("primary_stack_size", 1))
+        bring_back_size = int(options.get("bring_back_size", 1))
+        include_team_defense_stack = bool(
+            options.get("team_defense_stack", False) or options.get("include_team_defense_stack", False)
+        )
+        raw_max_own = options.get("max_total_ownership")
+        max_total_ownership = float(raw_max_own) if raw_max_own is not None and str(raw_max_own).strip() != "" else None
+
         if site == "draftkings":
             from src.build_draftkings_lineups import run_draftkings_pipeline
 
@@ -216,6 +225,11 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
                 entry_fee=entry_fee,
                 stack_ratio=stack_ratio,
                 game_stack_ratio=game_stack_ratio,
+                primary_stack_size=primary_stack_size,
+                bring_back_size=bring_back_size,
+                include_team_defense_stack=include_team_defense_stack,
+                max_total_ownership=max_total_ownership,
+                selection_metric=selection_metric,
                 max_qb_exposure=max_qb_exposure,
                 max_rb_exposure=max_rb_exposure,
                 max_wr_exposure=max_wr_exposure,
@@ -243,6 +257,11 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
                 entry_fee=entry_fee,
                 stack_ratio=stack_ratio,
                 game_stack_ratio=game_stack_ratio,
+                primary_stack_size=primary_stack_size,
+                bring_back_size=bring_back_size,
+                include_team_defense_stack=include_team_defense_stack,
+                max_total_ownership=max_total_ownership,
+                selection_metric=selection_metric,
                 max_qb_exposure=max_qb_exposure,
                 max_rb_exposure=max_rb_exposure,
                 max_wr_exposure=max_wr_exposure,

@@ -10,7 +10,7 @@ points, and performs BLAS matrix scoring and fast GPP tournament percentile rank
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from pydfs_lineup_optimizer import Player
@@ -18,6 +18,36 @@ from pydfs_lineup_optimizer import Player
 from src.config import BaseOptimizerConfig
 
 logger = logging.getLogger("FanDuelSimOptimizer")
+
+
+class SimulationResult(tuple):
+    """
+    Subclass of tuple containing (sim_roi, win_counts, top1_rates) for 100% backward
+    compatibility with 3-tuple unpacking, while also providing .ceilings, .top01_rates,
+    .sim_roi, .win_counts, and .top1_rates attributes.
+    """
+
+    sim_roi: np.ndarray
+    win_counts: np.ndarray
+    top1_rates: np.ndarray
+    ceilings: Optional[np.ndarray]
+    top01_rates: Optional[np.ndarray]
+
+    def __new__(
+        cls,
+        sim_roi: np.ndarray,
+        win_counts: np.ndarray,
+        top1_rates: np.ndarray,
+        ceilings: Optional[np.ndarray] = None,
+        top01_rates: Optional[np.ndarray] = None,
+    ) -> SimulationResult:
+        instance = super().__new__(cls, (sim_roi, win_counts, top1_rates))
+        instance.sim_roi = sim_roi
+        instance.win_counts = win_counts
+        instance.top1_rates = top1_rates
+        instance.ceilings = ceilings
+        instance.top01_rates = top01_rates
+        return instance
 
 
 class CorrelatedGameEngine:
@@ -198,8 +228,10 @@ class CorrelatedGameEngine:
         total_payouts = np.zeros(num_cands, dtype=np.float64)
         win_counts = np.zeros(num_cands, dtype=np.int32)
         top1_counts = np.zeros(num_cands, dtype=np.int32)
+        top01_counts = np.zeros(num_cands, dtype=np.int32)
 
         top1_cutoff = max(1, int(round(M * 0.01)))
+        top01_cutoff = max(1, int(round(M * 0.001)))
         for t in range(T):
             sf_col = sorted_field[:, t]
             cs_col = cand_scores[:, t]
@@ -209,10 +241,24 @@ class CorrelatedGameEngine:
             total_payouts += payout_ladder[ranks]
             win_counts += (ranks == 1)
             top1_counts += (ranks <= top1_cutoff)
+            top01_counts += (ranks <= top01_cutoff)
 
         total_entry_cost = T * entry_fee
         sim_roi = ((total_payouts - total_entry_cost) / total_entry_cost) * 100.0
         top1_rates = (top1_counts / T) * 100.0
+        top01_rates = (top01_counts / T) * 100.0
 
-        logger.info("Evaluated candidate rank placements and ROI simulation across %s trials.", f"{T:,}")
-        return sim_roi, win_counts, top1_rates
+        # Calculate simulated 99.9th percentile ceiling score for GPP right-tail optimization
+        cand_ceilings = np.percentile(cand_scores, 99.9, axis=1)
+
+        logger.info(
+            "Evaluated candidate rank placements, ROI, and 99.9th percentile ceilings across %s trials.",
+            f"{T:,}",
+        )
+        return SimulationResult(
+            sim_roi,
+            win_counts,
+            top1_rates,
+            ceilings=cand_ceilings,
+            top01_rates=top01_rates,
+        )

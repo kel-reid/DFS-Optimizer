@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
-from typing import Dict, List, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 import numpy as np
 from pydfs_lineup_optimizer import Lineup, Player
@@ -37,10 +37,11 @@ class PortfolioSelector:
         sim_roi: np.ndarray,
         win_counts: np.ndarray,
         top1_rates: np.ndarray,
+        cand_ceilings: Optional[np.ndarray] = None,
     ) -> List[Lineup]:
         """
-        Greedily selects K lineups sorted by ROI descending, respecting position
-        exposure limits:
+        Greedily selects K lineups sorted by configured selection metric descending
+        (ROI, 99.9th percentile ceiling, or win rate), respecting position exposure limits:
           QB:  <= max_qb_exposure (e.g. 25% = 37 lineups)
           DEF: <= max_def_exposure (e.g. 20% = 30 lineups)
           Skill (RB, WR, TE): <= max_exposure (e.g. 25% = 37 lineups)
@@ -51,8 +52,25 @@ class PortfolioSelector:
         logger.info("STAGE 4: PORTFOLIO SELECTION & EXPOSURE OPTIMIZATION (K = %d)", K)
         logger.info("=" * 70)
 
-        # Sort candidate indices by ROI descending (secondary key: top1_rates)
-        sort_order = np.lexsort((-top1_rates, -sim_roi))
+        # Check if ceilings passed as attribute on sim_roi tuple subclass
+        if cand_ceilings is None and hasattr(sim_roi, "ceilings"):
+            cand_ceilings = getattr(sim_roi, "ceilings")
+
+        metric = getattr(self.config, "selection_metric", "roi").lower()
+        if metric == "ceiling" and cand_ceilings is not None:
+            # Sort primarily by 99.9th percentile ceiling score descending, secondary win_counts, top1_rates
+            sort_order = np.lexsort((-sim_roi, -win_counts, -top1_rates, -cand_ceilings))
+            metric_desc = "99.9th Percentile Ceiling Score (Q_0.999)"
+        elif metric == "win_rate":
+            # Sort primarily by 1st place win rate / counts descending, secondary top1_rates, sim_roi
+            sort_order = np.lexsort((-sim_roi, -top1_rates, -win_counts))
+            metric_desc = "1st Place Win Rate"
+        else:
+            # Sort candidate indices by ROI descending (secondary key: top1_rates)
+            sort_order = np.lexsort((-top1_rates, -sim_roi))
+            metric_desc = "Expected Simulated ROI %"
+
+        logger.info("Portfolio Selection Objective: Maximizing %s", metric_desc)
 
         is_single_game = getattr(self.config, "is_single_game", False)
         sg_default_cap = getattr(self.config, "single_game_max_exposure", 0.65)
