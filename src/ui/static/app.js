@@ -50,6 +50,12 @@
   const stackRatioSlider = document.getElementById('stack-ratio');
   const valStackRatio = document.getElementById('val-stack-ratio');
 
+  const gameStackRatioSlider = document.getElementById('game-stack-ratio');
+  const valGameStackRatio = document.getElementById('val-game-stack-ratio');
+
+  const selectionMetricSelect = document.getElementById('selection-metric');
+  const valSelectionMetric = document.getElementById('val-selection-metric');
+
   const maxQbExposureSlider = document.getElementById('max-qb-exposure');
   const valMaxQbExposure = document.getElementById('val-max-qb-exposure');
   const qbMaxCount = document.getElementById('qb-max-count');
@@ -70,6 +76,10 @@
   const numFieldInput = document.getElementById('num-field');
   const numTrialsInput = document.getElementById('num-trials');
   const randomnessDevInput = document.getElementById('randomness-dev');
+  const maxTotalOwnershipInput = document.getElementById('max-total-ownership');
+  const primaryStackSizeSelect = document.getElementById('primary-stack-size');
+  const bringBackSizeSelect = document.getElementById('bring-back-size');
+  const teamDefenseStackCheckbox = document.getElementById('team-defense-stack');
   const strictCapsInput = document.getElementById('strict-caps');
 
   // Progress Section
@@ -217,7 +227,19 @@
         ? (isDk ? 'Showdown (CPT/FLEX)' : 'Single Game (MVP)')
         : `Classic (${isDk ? '$50k' : '$60k'} Cap)`;
 
-      metricFee.textContent = `$${data.entry_fee.toFixed(2)}`;
+      metricFee.textContent = data.entry_fee_display || `$${data.entry_fee.toFixed(2)}`;
+
+      const metricFeeSub = document.getElementById('metric-fee-sub');
+      if (metricFeeSub) {
+        if (data.entry_fee_sub) {
+          metricFeeSub.textContent = data.entry_fee_sub;
+          metricFeeSub.classList.remove('hidden');
+        } else {
+          metricFeeSub.textContent = '';
+          metricFeeSub.classList.add('hidden');
+        }
+      }
+
       metricEntries.textContent = `${data.num_entries} Entries`;
       metricPlayers.textContent = data.num_players > 0 ? `${data.num_players} Players` : 'Ready';
 
@@ -231,6 +253,7 @@
         numLineupsSlider.value = data.num_entries;
         valNumLineups.textContent = data.num_entries;
         updateCapCounts();
+        updateRepeatingHint();
       }
 
       // Check if ready to optimize
@@ -246,6 +269,9 @@
   function updateCapCounts() {
     const k = parseInt(numLineupsSlider.value, 10);
     valNumLineups.textContent = k;
+    document.querySelectorAll('.total-k-label').forEach((el) => {
+      el.textContent = k;
+    });
 
     const qbCap = parseFloat(maxQbExposureSlider.value) / 100;
     qbMaxCount.textContent = Math.floor(k * qbCap);
@@ -261,6 +287,31 @@
 
   stackRatioSlider.addEventListener('input', (e) => {
     valStackRatio.textContent = `${e.target.value}%`;
+    const pVal = parseInt(e.target.value, 10);
+    const gVal = parseInt(gameStackRatioSlider.value, 10);
+    if (gVal > pVal) {
+      gameStackRatioSlider.value = pVal;
+      valGameStackRatio.textContent = `${pVal}%`;
+    }
+  });
+
+  gameStackRatioSlider.addEventListener('input', (e) => {
+    let gVal = parseInt(e.target.value, 10);
+    const pVal = parseInt(stackRatioSlider.value, 10);
+    if (gVal > pVal) {
+      gVal = pVal;
+      gameStackRatioSlider.value = gVal;
+    }
+    valGameStackRatio.textContent = `${gVal}%`;
+  });
+
+  selectionMetricSelect.addEventListener('change', (e) => {
+    const labels = {
+      ceiling: 'Ceiling',
+      roi: 'ROI',
+      win_rate: 'Win Rate',
+    };
+    valSelectionMetric.textContent = labels[e.target.value] || 'Ceiling';
   });
 
   maxQbExposureSlider.addEventListener('input', (e) => {
@@ -278,9 +329,19 @@
     updateCapCounts();
   });
 
-  maxRepeatingSlider.addEventListener('input', (e) => {
-    valMaxRepeating.textContent = e.target.value;
-  });
+  function updateRepeatingHint() {
+    const val = parseInt(maxRepeatingSlider.value, 10);
+    valMaxRepeating.textContent = val;
+    const diffEl = document.getElementById('repeating-diff-count');
+    if (diffEl) {
+      const rSize = (state.inspection && state.inspection.is_single_game)
+        ? (state.inspection.platform === 'draftkings' ? 6 : 5)
+        : 9;
+      diffEl.textContent = Math.max(1, rSize - val);
+    }
+  }
+
+  maxRepeatingSlider.addEventListener('input', updateRepeatingHint);
 
 
 
@@ -325,7 +386,13 @@
         num_lineups: parseInt(numLineupsSlider.value, 10),
         entry_fee: state.inspection ? state.inspection.entry_fee : 1.0,
         stack_ratio: parseFloat(stackRatioSlider.value) / 100,
-        game_stack_ratio: Math.min(0.40, parseFloat(stackRatioSlider.value) / 100),
+        game_stack_ratio: parseFloat(gameStackRatioSlider.value) / 100,
+        selection_metric: selectionMetricSelect.value,
+        primary_stack_size: parseInt(primaryStackSizeSelect.value, 10),
+        bring_back_size: parseInt(bringBackSizeSelect.value, 10),
+        team_defense_stack: teamDefenseStackCheckbox.checked,
+        include_team_defense_stack: teamDefenseStackCheckbox.checked,
+        max_total_ownership: maxTotalOwnershipInput.value.trim() !== '' ? parseFloat(maxTotalOwnershipInput.value) : null,
         max_qb_exposure: parseFloat(maxQbExposureSlider.value) / 100,
         max_rb_exposure: parseFloat(maxSkillExposureSlider.value) / 100,
         max_wr_exposure: parseFloat(maxSkillExposureSlider.value) / 100,

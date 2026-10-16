@@ -189,10 +189,80 @@ class FanDuelDataLoader:
             self._apply_external_projections(optimizer, self.config.projections_csv)
 
         if is_single_game:
-            # Enforce 1.5x MVP projection multiplier for Single Game
+            # Detect whether modern 6-player (1 MVP + 5 FLEX) or legacy 5-player (1 MVP + 4 FLEX)
+            num_flex = 5  # Modern FanDuel Single Game standard (2025+)
+            template_detected = False
+            if self.config.template_csv and self.config.template_csv.exists():
+                try:
+                    with open(self.config.template_csv, "r", encoding="utf-8-sig") as f:
+                        raw_hdr = [c.strip().strip('"') for c in f.readline().split(",")]
+                        detected_flex = sum(1 for c in raw_hdr if "AnyFLEX" in c or "FLEX" in c)
+                        if detected_flex > 0:
+                            num_flex = detected_flex
+                            template_detected = True
+                except Exception:
+                    pass
+
+            # If no template was provided, inspect player pool CSV for MVP 1.5x Salary column
+            has_mvp_15_salary = False
+            mvp_salary_map: dict[str, float] = {}
+            try:
+                df_players = pd.read_csv(csv_path)
+                if "MVP 1.5x Salary" in df_players.columns:
+                    has_mvp_15_salary = True
+                    if "Id" in df_players.columns:
+                        for _, row in df_players.iterrows():
+                            val = row.get("MVP 1.5x Salary")
+                            if pd.notna(val):
+                                mvp_salary_map[str(row["Id"])] = float(val)
+            except Exception:
+                pass
+
+            if not template_detected and not has_mvp_15_salary:
+                # Legacy 5-player Single Game format fallback
+                num_flex = 4
+
+            from pydfs_lineup_optimizer.settings import LineupPosition
+            sg_positions = [LineupPosition("MVP", ("MVP",))] + [
+                LineupPosition("UTIL", ("QB", "WR", "RB", "TE", "K"))
+                for _ in range(num_flex)
+            ]
+            optimizer.settings.positions = sg_positions
+            optimizer.settings.get_total_players = lambda: len(sg_positions)  # type: ignore[method-assign]
+            optimizer.player_pool._remaining_positions = sg_positions[:]
+
+            logger.info(
+                "Configured FanDuel Single Game roster slots: 1 MVP + %d AnyFLEX (%d total players).",
+                num_flex,
+                len(sg_positions),
+            )
+
+            # In modern FanDuel Single Game (2025+), MVP costs 1.5x salary against the cap
+            if has_mvp_15_salary or num_flex == 5:
+                for player in optimizer.player_pool.all_players:
+                    if "MVP" in player.positions:
+                        p_id = str(player.id)
+                        if p_id in mvp_salary_map:
+                            player.salary = mvp_salary_map[p_id]
+                        else:
+                            player.salary = round(player.salary * 1.5)
+
+            # Enforce 1.5x MVP projection multiplier if external projections were merged
+            # (Note: pydfs-lineup-optimizer already multiplies raw CSV FPPG by 1.5x during load_players_from_csv)
+            if self.config.projections_csv and self.config.projections_csv.exists():
+                for player in optimizer.player_pool.all_players:
+                    if "MVP" in player.positions:
+                        player.fppg *= 1.5
+
+            # Restrict Kickers and Defenses from MVP slot (UTIL eligible only)
+            restricted_mvps = 0
             for player in optimizer.player_pool.all_players:
-                if "MVP" in player.positions:
-                    player.fppg *= 1.5
+                if any(pos in ("K", "D", "DEF") for pos in player.positions):
+                    if "MVP" in player.positions:
+                        player.positions = [pos for pos in player.positions if pos != "MVP"]
+                        restricted_mvps += 1
+            if restricted_mvps > 0:
+                logger.info("FanDuel Single Game Rule: Restricted %d Kicker/Defense players from MVP pool (UTIL eligible only).", restricted_mvps)
         else:
             self._filter_backup_quarterbacks(optimizer)
 

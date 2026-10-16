@@ -256,7 +256,7 @@ def run_fanduel_pipeline(
     if progress_callback:
         progress_callback(35, f"Stage 1: Generating candidate pool of {config.num_candidates} lineups via MILP...")
     candidate_generator = CandidatePoolGenerator(optimizer, config)
-    candidates, candidates_matrix = candidate_generator.generate_candidate_pool()
+    candidates, candidates_matrix = candidate_generator.generate_candidate_pool(progress_callback=progress_callback)
 
     # 3. Stage 2: Simulate Opponent Field Lineups
     if progress_callback:

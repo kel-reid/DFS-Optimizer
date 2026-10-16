@@ -122,6 +122,36 @@ def test_inspect_csv_data_draftkings_showdown():
     assert result["num_entries"] == 1
 
 
+def test_inspect_csv_data_multi_contest_draftkings():
+    showdown_players = (
+        "Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame\n"
+        "CPT,Bo Nix (101),Bo Nix,101,CPT/FLEX,14400,SEA@DEN,DEN,14.0\n"
+        "FLEX,Bo Nix (102),Bo Nix,102,CPT/FLEX,9600,SEA@DEN,DEN,14.0\n"
+    )
+    # Template with two distinct contests and fees: 2 entries @ $0.25, 2 entries @ $0.10
+    template = (
+        "Entry ID,Contest Name,Contest ID,Entry Fee,CPT,FLEX,FLEX,FLEX,FLEX,FLEX\n"
+        "1001,Quarter Jukebox,196689723,$0.25,,,,,\n"
+        "1002,Quarter Jukebox,196689723,$0.25,,,,,\n"
+        "2001,Dime Package,196689724,$0.10,,,,,\n"
+        "2002,Dime Package,196689724,$0.10,,,,,\n"
+    )
+    result = _inspect_csv_data(showdown_players, template)
+    assert result["platform"] == "draftkings"
+    assert result["is_single_game"] is True
+    assert result["num_entries"] == 4
+    assert result["unique_fees"] == [0.10, 0.25]
+    assert result["total_entry_fee"] == 0.70
+    assert result["entry_fee_display"] == "$0.10, $0.25"
+    assert result["entry_fee_sub"] == "($0.70 Total)"
+    assert len(result["contests"]) == 2
+    assert result["contests"][0]["name"] == "Quarter Jukebox"
+    assert result["contests"][0]["count"] == 2
+    assert result["contests"][1]["name"] == "Dime Package"
+    assert result["contests"][1]["count"] == 2
+
+
+
 def test_inspect_csv_data_fanduel():
     fd_players = (
         "Id,Position,First Name,Last Name,Nickname,Salary,FPPG,Team,Opponent,Injury Indicator\n"
@@ -141,6 +171,23 @@ def test_inspect_csv_data_fanduel():
     assert result["entry_fee"] == 0.05
     assert result["num_entries"] == 2
     assert result["num_players"] == 2
+
+
+def test_inspect_csv_data_fanduel_single_game():
+    fd_players = (
+        "Id,Position,First Name,Last Name,Nickname,Salary,FPPG,Team,Opponent,Injury Indicator\n"
+        "101,QB,Josh,Allen,Josh Allen,16500,24.5,BUF,LAR,\n"
+        "102,QB,Matthew,Stafford,Matthew Stafford,14000,18.2,LAR,BUF,\n"
+    )
+    fd_single_game_template = (
+        'entry_id,contest_id,contest_name,entry_fee,MVP,AnyFLEX,AnyFLEX,AnyFLEX,AnyFLEX\n'
+        '"3743770838","135023-280945024","$5K Mon NFL Single Game","0.05","","","","",""\n'
+    )
+    result = _inspect_csv_data(fd_players, fd_single_game_template)
+    assert result["platform"] == "fanduel"
+    assert result["is_single_game"] is True
+    assert result["entry_fee"] == 0.05
+    assert result["num_entries"] == 1
 
 
 def test_compute_export_summary(tmp_path: Path):
@@ -446,3 +493,45 @@ def test_execute_optimization_job_sanitizes_template_filename(tmp_path: Path):
         # Template written during job execution must be sanitized to basename
         written_template = tmp_path / "malicious_template.csv"
         assert written_template.exists()
+
+
+def test_start_ui_server_auto_open_flag():
+    """Verifies that start_ui_server defaults auto_open to False and only opens browser when True."""
+    from src.ui.server import start_ui_server
+
+    # Test auto_open=False (default): webbrowser.open should NOT be called
+    with patch("src.ui.server.ThreadingHTTPServer") as mock_server_cls, \
+         patch("src.ui.server.webbrowser.open") as mock_browser:
+        mock_instance = mock_server_cls.return_value
+        mock_instance.serve_forever.side_effect = KeyboardInterrupt
+        start_ui_server(port=9999, auto_open=False)
+        mock_browser.assert_not_called()
+
+    # Test auto_open=True: webbrowser.open SHOULD be called
+    with patch("src.ui.server.ThreadingHTTPServer") as mock_server_cls, \
+         patch("src.ui.server.webbrowser.open") as mock_browser:
+        mock_instance = mock_server_cls.return_value
+        mock_instance.serve_forever.side_effect = KeyboardInterrupt
+        start_ui_server(port=9999, auto_open=True)
+        mock_browser.assert_called_once_with("http://localhost:9999")
+
+
+def test_run_optimizer_ui_browser_flags():
+    """Verifies run_optimizer.py CLI parses --ui and browser flags correctly."""
+    import run_optimizer
+
+    with patch("sys.argv", ["run_optimizer.py", "--ui"]), \
+         patch("src.ui.server.start_ui_server") as mock_start:
+        run_optimizer.main()
+        mock_start.assert_called_once_with(port=8500, auto_open=False)
+
+    with patch("sys.argv", ["run_optimizer.py", "--ui", "--open-browser"]), \
+         patch("src.ui.server.start_ui_server") as mock_start:
+        run_optimizer.main()
+        mock_start.assert_called_once_with(port=8500, auto_open=True)
+
+    with patch("sys.argv", ["run_optimizer.py", "--ui", "--open-browser", "--no-browser"]), \
+         patch("src.ui.server.start_ui_server") as mock_start:
+        run_optimizer.main()
+        mock_start.assert_called_once_with(port=8500, auto_open=False)
+

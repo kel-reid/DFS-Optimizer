@@ -43,7 +43,6 @@
       <section class="card glass-card ingestion-section">
         <div class="card-header">
           <div class="card-title-group">
-            <span class="step-num">1</span>
             <h2>Contest Ingestion Hub</h2>
           </div>
           <p class="card-desc">Drag and drop your official contest CSV files from your browser's Downloads folder. No
@@ -106,13 +105,14 @@
             <span class="metric-label">Detected Platform</span>
             <span class="metric-val" id="metric-platform">-</span>
           </div>
-          <div class="metric-item">
+          <div class="metric-item" id="metric-item-format">
             <span class="metric-label">Contest Format</span>
             <span class="metric-val" id="metric-format">-</span>
           </div>
-          <div class="metric-item">
+          <div class="metric-item" id="metric-item-fee">
             <span class="metric-label">Entry Fee</span>
             <span class="metric-val" id="metric-fee">$1.00</span>
+            <span class="metric-sub hidden" id="metric-fee-sub"></span>
           </div>
           <div class="metric-item">
             <span class="metric-label">Reserved Entries</span>
@@ -129,8 +129,7 @@
       <section class="card glass-card config-section">
         <div class="card-header">
           <div class="card-title-group">
-            <span class="step-num">2</span>
-            <h2>Portfolio Exposure & Simulation Controls</h2>
+            <h2>Portfolio Exposure & Simulation</h2>
           </div>
         </div>
 
@@ -156,6 +155,17 @@
               <span class="control-hint">QB + WR/TE primary franchise correlation stack allocation</span>
             </div>
 
+            <!-- Game Stack Ratio -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="game-stack-ratio">Game Stack Shootout Ratio</label>
+                <span class="val-badge" id="val-game-stack-ratio">40%</span>
+              </div>
+              <input type="range" id="game-stack-ratio" min="0" max="100" value="40" step="5" class="custom-slider">
+              <span class="control-hint">QB + Pass-Catchers + Opposing Bring-Back game shootout stack (clamped &le;
+                Primary Stack)</span>
+            </div>
+
             <!-- QB Ceiling -->
             <div class="control-box">
               <div class="control-label-row">
@@ -163,7 +173,8 @@
                 <span class="val-badge" id="val-max-qb-exposure">25%</span>
               </div>
               <input type="range" id="max-qb-exposure" min="5" max="100" value="25" step="1" class="custom-slider">
-              <span class="control-hint">Hard ceiling per QB (<span id="qb-max-count">37</span> / 150 rosters)</span>
+              <span class="control-hint">Hard ceiling per QB (<span id="qb-max-count">37</span> / <span
+                  class="total-k-label">150</span> rosters)</span>
             </div>
 
             <!-- Skill Positions Ceiling -->
@@ -173,29 +184,44 @@
                 <span class="val-badge" id="val-max-skill-exposure">25%</span>
               </div>
               <input type="range" id="max-skill-exposure" min="5" max="100" value="25" step="1" class="custom-slider">
-              <span class="control-hint">Hard ceiling per skill starter (<span id="skill-max-count">37</span> / 150
-                rosters)</span>
+              <span class="control-hint">Hard ceiling per skill starter (<span id="skill-max-count">37</span> / <span
+                  class="total-k-label">150</span> rosters)</span>
             </div>
 
-            <!-- Defense Ceiling -->
+            <!-- Defense & Special Teams Ceiling -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="max-def-exposure">Team Defense Max Exposure (DEF / DST)</label>
+                <label for="max-def-exposure">Defense & Special Teams Max Exposure (DEF / DST / K)</label>
                 <span class="val-badge" id="val-max-def-exposure">20%</span>
               </div>
               <input type="range" id="max-def-exposure" min="5" max="100" value="20" step="1" class="custom-slider">
-              <span class="control-hint">Hard ceiling per defensive unit (<span id="def-max-count">30</span> / 150
-                rosters)</span>
+              <span class="control-hint">Hard ceiling per defense / kicker unit (<span id="def-max-count">30</span> /
+                <span class="total-k-label">150</span> rosters)</span>
             </div>
 
             <!-- Lineup Uniqueness -->
             <div class="control-box">
               <div class="control-label-row">
                 <label for="max-repeating">Max Repeating Players</label>
-                <span class="val-badge" id="val-max-repeating">6</span>
+                <span class="val-badge" id="val-max-repeating">4</span>
               </div>
-              <input type="range" id="max-repeating" min="3" max="8" value="6" step="1" class="custom-slider">
-              <span class="control-hint">Guarantees &ge; 3 unique players between every roster pair</span>
+              <input type="range" id="max-repeating" min="2" max="8" value="4" step="1" class="custom-slider">
+              <span class="control-hint">Guarantees &ge; <span id="repeating-diff-count">2</span> unique player(s)
+                between every roster pair</span>
+            </div>
+
+            <!-- Portfolio Selection Metric -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <label for="selection-metric">Portfolio Selection Objective</label>
+                <span class="val-badge" id="val-selection-metric">Ceiling</span>
+              </div>
+              <select id="selection-metric" class="select-input">
+                <option value="ceiling" selected>99.9th Percentile Ceiling (Q_0.999) - Large GPP</option>
+                <option value="roi">Expected Simulated ROI % - High Stakes / Cash</option>
+                <option value="win_rate">1st Place Win Rate (P_win) - Top Heavy</option>
+              </select>
+              <span class="control-hint">Objective metric maximized by the Monte Carlo selection engine</span>
             </div>
           </div>
 
@@ -205,20 +231,44 @@
             <div class="advanced-grid">
               <div class="input-field">
                 <label for="num-candidates">MILP Candidates (N)</label>
-                <input type="number" id="num-candidates" value="500" min="50" max="1000" class="num-input">
+                <input type="number" id="num-candidates" value="500" min="50" max="5000" class="num-input">
               </div>
               <div class="input-field">
                 <label for="num-field">Opponent Field Size (M)</label>
-                <input type="number" id="num-field" value="10000" min="1000" max="25000" class="num-input">
+                <input type="number" id="num-field" value="10000" min="1000" max="50000" class="num-input">
               </div>
               <div class="input-field">
                 <label for="num-trials">Game Outcome Trials (T)</label>
-                <input type="number" id="num-trials" value="5000" min="500" max="10000" class="num-input">
+                <input type="number" id="num-trials" value="5000" min="500" max="25000" class="num-input">
               </div>
               <div class="input-field">
                 <label for="randomness-dev">Variance Dev Multiplier</label>
-                <input type="number" id="randomness-dev" value="0.25" min="0.05" max="0.50" step="0.05"
+                <input type="number" id="randomness-dev" value="0.25" min="0.05" max="0.50" step="0.01"
                   class="num-input">
+              </div>
+              <div class="input-field">
+                <label for="max-total-ownership">Max Cumulative Ownership (%)</label>
+                <input type="number" id="max-total-ownership" placeholder="e.g. 115 (blank = unconstrained)" min="50"
+                  max="300" step="5" class="num-input">
+              </div>
+              <div class="input-field">
+                <label for="primary-stack-size">Primary Pass-Catchers (QB + X)</label>
+                <select id="primary-stack-size" class="select-input">
+                  <option value="1" selected>1 Receiver (Single Stack)</option>
+                  <option value="2">2 Receivers (Double Stack)</option>
+                </select>
+              </div>
+              <div class="input-field">
+                <label for="bring-back-size">Opponent Bring-Backs</label>
+                <select id="bring-back-size" class="select-input">
+                  <option value="0">0 (No Bring-Back)</option>
+                  <option value="1" selected>1 Opposing Player</option>
+                  <option value="2">2 Opposing Players</option>
+                </select>
+              </div>
+              <div class="checkbox-field">
+                <input type="checkbox" id="team-defense-stack">
+                <label for="team-defense-stack">Pair Team Defense with QB (DST Stack)</label>
               </div>
               <div class="checkbox-field">
                 <input type="checkbox" id="strict-caps">
@@ -300,7 +350,7 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            <span id="download-btn-text">Download Completed Lineups CSV</span>
+            <span id="download-btn-text">Download Completed Lineups</span>
           </button>
           <button id="btn-reset" class="btn btn-secondary">Optimize Another Contest</button>
         </div>

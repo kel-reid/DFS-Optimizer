@@ -44,16 +44,23 @@ class FanDuelTemplateExporter:
 
         logger.info("Reading reserved entries template: %s", template_path)
 
-        # Auto-detect whether Single Game (5 roster slots = 9 columns) or Classic (9 roster slots = 13 columns)
-        is_single_game = (
-            self.config.is_single_game
-            or (lineups and any("MVP" in p.lineup_position for p in lineups[0].lineup))
-        )
-        num_cols = 9 if is_single_game else 13
+        lineup_size = len(list(lineups[0].lineup)) if lineups else 0
 
         with open(template_path, "r", newline="", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
-            header = next(reader)[:num_cols]
+            raw_header = next(reader)
+
+            # Locate where position columns end (stop at instructions or blank trailing columns)
+            pos_end = len(raw_header)
+            for idx in range(4, len(raw_header)):
+                col = raw_header[idx].strip()
+                if not col or "instruction" in col.lower():
+                    pos_end = idx
+                    break
+
+            # Exact number of columns matching contest format (4 metadata + lineup_size roster slots)
+            num_cols = min(pos_end, 4 + lineup_size) if lineup_size > 0 else pos_end
+            header = raw_header[:num_cols]
             rows = []
             for row in reader:
                 if row and row[0].strip():
@@ -66,10 +73,10 @@ class FanDuelTemplateExporter:
 
         df = pd.DataFrame(rows, columns=header)
         logger.info(
-            "Loaded template with pandas (%s): %d reserved entries, %d columns.",
-            "Single Game" if is_single_game else "Classic",
+            "Loaded template with pandas: %d reserved entries, %d columns (%d roster positions).",
             len(df),
             len(df.columns),
+            len(df.columns) - 4,
         )
 
         if len(df) != len(lineups):

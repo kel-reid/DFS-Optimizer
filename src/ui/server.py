@@ -48,37 +48,76 @@ def _inspect_csv_data(
     if not site:
         site = "draftkings" if "DKSalaries" in players_content or "Roster Position" in players_content else "fanduel"
 
-    # 2. Entry fee detection
-    fee: Optional[float] = None
+    # 2. Entry fee & multi-contest detection
+    fees: list[float] = []
+    contests: dict[str, dict[str, Any]] = {}
+    total_entry_fee = 0.0
+
     if template_content:
         reader = csv.reader(io.StringIO(template_content))
         header = next(reader, None)
         if header:
             fee_idx = None
+            contest_idx = None
             for idx, col in enumerate(header):
                 clean_col = col.strip().lower()
                 if clean_col in ("entry_fee", "entry fee", "entry ($)", "fee", "entryfee") or "fee" in clean_col:
-                    fee_idx = idx
-                    break
-            if fee_idx is not None:
-                for row in reader:
-                    if row and len(row) > fee_idx and row[fee_idx].strip():
-                        val_str = row[fee_idx].strip().replace("$", "").replace(",", "")
-                        try:
-                            parsed_fee = float(val_str)
-                            if parsed_fee >= 0:
-                                fee = parsed_fee
-                                break
-                        except ValueError:
-                            pass
+                    if fee_idx is None:
+                        fee_idx = idx
+                if clean_col in ("contest_name", "contest name", "contest", "title") or ("contest" in clean_col and "id" not in clean_col):
+                    if contest_idx is None:
+                        contest_idx = idx
+
+            for row in reader:
+                if not row or not any(field.strip() for field in row):
+                    continue
+                # Row must have an entry ID in column 0
+                if not row[0].strip().strip('"').isdigit():
+                    continue
+
+                row_fee: Optional[float] = None
+                if fee_idx is not None and len(row) > fee_idx and row[fee_idx].strip():
+                    val_str = row[fee_idx].strip().replace("$", "").replace(",", "")
+                    try:
+                        f_val = float(val_str)
+                        if f_val >= 0:
+                            row_fee = f_val
+                    except ValueError:
+                        pass
+
+                c_name = "Contest"
+                if contest_idx is not None and len(row) > contest_idx and row[contest_idx].strip():
+                    c_name = row[contest_idx].strip()
+
+                if row_fee is not None:
+                    fees.append(row_fee)
+                    total_entry_fee += row_fee
+
+                if c_name not in contests:
+                    contests[c_name] = {"name": c_name, "count": 0, "fee": row_fee}
+                contests[c_name]["count"] += 1
+
+    unique_fees = sorted(list(set(fees)))
+    fee: Optional[float] = None
+    fee_sub_display = ""
+    if len(unique_fees) == 1:
+        fee = unique_fees[0]
+        fee_display = f"${fee:.2f}"
+    elif len(unique_fees) > 1:
+        fee = unique_fees[-1]
+        fees_str = ", ".join(f"${f:.2f}" for f in unique_fees)
+        fee_display = fees_str
+        fee_sub_display = f"(${total_entry_fee:.2f} Total)"
+    else:
+        fee_display = "$1.00"
 
     # 3. Entries count (only count rows where entry_id in column 0 is present)
-    num_entries = 0
-    if template_content:
+    num_entries = sum(c["count"] for c in contests.values()) if contests else 0
+    if num_entries == 0 and template_content:
         reader = csv.reader(io.StringIO(template_content))
         _ = next(reader, None)  # header
         for row in reader:
-            if row and row[0].strip():
+            if row and row[0].strip().strip('"').isdigit():
                 num_entries += 1
 
     # 4. Players count & format detection (Classic vs Single Game / Showdown)
@@ -93,9 +132,12 @@ def _inspect_csv_data(
             if not p_row:
                 continue
             num_players += 1
-            pos = p_row.get("Position") or p_row.get("Roster Position") or ""
+            pos = p_row.get("Position") or ""
+            roster_pos = p_row.get("Roster Position") or ""
             if pos:
                 positions.add(pos.strip().upper())
+            if roster_pos:
+                positions.add(roster_pos.strip().upper())
             if len(sample_players) < 5:
                 name = (
                     p_row.get("Nickname")
@@ -120,11 +162,21 @@ def _inspect_csv_data(
         elif site == "fanduel" and ("MVP" in positions or "AnyFLEX" in str(positions)):
             is_single_game = True
 
+    if not is_single_game and template_content:
+        first_line = template_content.strip().split("\n")[0]
+        if "MVP" in first_line or "AnyFLEX" in first_line or "CPT" in first_line:
+            is_single_game = True
+
     return {
         "success": True,
         "platform": site,
         "is_single_game": is_single_game,
         "entry_fee": fee or 1.0,
+        "entry_fee_display": fee_display,
+        "entry_fee_sub": fee_sub_display,
+        "unique_fees": unique_fees,
+        "total_entry_fee": total_entry_fee,
+        "contests": list(contests.values()),
         "num_entries": num_entries if num_entries > 0 else 150,
         "num_players": num_players,
         "has_projections": bool(projections_content and len(projections_content.strip()) > 0),
@@ -177,6 +229,9 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
             or "draftkings"
         )
         is_single_game = bool(options.get("is_single_game", False))
+        if not is_single_game:
+            insp = _inspect_csv_data(players_content, template_content, projections_content)
+            is_single_game = bool(insp.get("is_single_game", False))
 
         num_lineups = int(options.get("num_lineups", 150))
         num_candidates = int(options.get("num_candidates", 500))
@@ -240,6 +295,7 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
                 randomness_deviation=randomness,
                 zero_unprojected=zero_unprojected,
                 strict_exposure_caps=strict_caps,
+                is_single_game=is_single_game,
             )
             result_path = run_draftkings_pipeline(config=cfg, progress_callback=callback)
         else:
@@ -515,7 +571,7 @@ class DFSOptimizerHandler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
 
-def start_ui_server(port: int = 8500, auto_open: bool = True) -> None:
+def start_ui_server(port: int = 8500, auto_open: bool = False) -> None:
     """Initializes and runs the local DFS Optimizer Web Dashboard server."""
     server_address = ("127.0.0.1", port)
     try:
