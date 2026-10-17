@@ -117,9 +117,26 @@ def apply_forward_projections(
     logger.info("Applying forward-looking projections from: %s", proj_path)
     proj_df = pd.read_csv(proj_path)
 
-    # Determine projection score column
+    # Determine projection score column (prioritizing forward-looking ppg_projection)
     score_col = None
-    for candidate_col in ["ppg_projection", "PPG_Projection", "fantasy", "Projection", "projection", "Points", "points", "FPPG", "fppg"]:
+    for candidate_col in [
+        "ppg_projection",
+        "PPG_Projection",
+        "ppg_proj",
+        "PPG_Proj",
+        "proj_fppg",
+        "Proj_FPPG",
+        "ppg",
+        "PPG",
+        "projection",
+        "Projection",
+        "fantasy",
+        "Fantasy",
+        "Points",
+        "points",
+        "FPPG",
+        "fppg",
+    ]:
         if candidate_col in proj_df.columns:
             score_col = candidate_col
             break
@@ -146,7 +163,13 @@ def apply_forward_projections(
     def_own_map: Dict[str, float] = {}
     projected_positions: set[str] = set()
 
-    has_first_last = "first_name" in proj_df.columns and "last_name" in proj_df.columns
+    has_first_last = (
+        ("first_name" in proj_df.columns and "last_name" in proj_df.columns)
+        or ("First Name" in proj_df.columns and "Last Name" in proj_df.columns)
+    )
+    fn_col = "first_name" if "first_name" in proj_df.columns else "First Name"
+    ln_col = "last_name" if "last_name" in proj_df.columns else "Last Name"
+
     player_col = None
     for cand in ["player", "Player", "name", "Name", "player_name", "Player_Name"]:
         if cand in proj_df.columns:
@@ -167,8 +190,8 @@ def apply_forward_projections(
 
     for _, row in proj_df.iterrows():
         if has_first_last:
-            fn = str(row["first_name"]).strip() if pd.notna(row["first_name"]) else ""
-            ln = str(row["last_name"]).strip() if pd.notna(row["last_name"]) else ""
+            fn = str(row[fn_col]).strip() if pd.notna(row[fn_col]) else ""
+            ln = str(row[ln_col]).strip() if pd.notna(row[ln_col]) else ""
             p_val = f"{fn} {ln}".strip() if ln else fn
         elif player_col:
             p_val = str(row[player_col]).strip() if pd.notna(row[player_col]) else ""
@@ -223,6 +246,7 @@ def apply_forward_projections(
             or "D/ST" in p_val
             or "DST" in p_val
             or "DEF" in p_val
+            or p_val.lower().endswith("defense")
         )
         if is_defense:
             projected_positions.update(["D", "DEF", "DST"])
@@ -230,7 +254,14 @@ def apply_forward_projections(
                 def_map[normalize_name(t_val)] = val
                 if own_val is not None:
                     def_own_map[normalize_name(t_val)] = own_val
-            clean_team = p_val.replace("D/ST", "").replace("DST", "").replace("DEF", "").strip()
+            clean_team = (
+                p_val.replace("D/ST", "")
+                .replace("DST", "")
+                .replace("DEF", "")
+                .replace("Defense", "")
+                .replace("defense", "")
+                .strip()
+            )
             if clean_team:
                 def_map[normalize_name(clean_team)] = val
                 if own_val is not None:

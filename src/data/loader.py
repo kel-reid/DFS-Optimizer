@@ -187,6 +187,14 @@ class FanDuelDataLoader:
 
         if self.config.projections_csv and self.config.projections_csv.exists():
             self._apply_external_projections(optimizer, self.config.projections_csv)
+        elif csv_path.exists():
+            try:
+                with open(csv_path, "r", encoding="utf-8-sig") as f:
+                    header = f.readline()
+                    if "ppg_projection" in header.lower():
+                        self._apply_external_projections(optimizer, csv_path)
+            except Exception:
+                pass
 
         if is_single_game:
             # Detect whether modern 6-player (1 MVP + 5 FLEX) or legacy 5-player (1 MVP + 4 FLEX)

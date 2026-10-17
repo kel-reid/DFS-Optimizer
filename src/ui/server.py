@@ -26,6 +26,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 from src.config import DKOptimizerConfig, SimOptimizerConfig
+from src.data.projections import normalize_name
 from src.site_detector import detect_site_from_content
 
 logger = logging.getLogger("DFSOptimizerUI")
@@ -333,7 +334,12 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
             result_path = run_fanduel_pipeline(config=fd_cfg, progress_callback=callback)
 
         # Audit exported lineups for UI metrics
-        summary = _compute_export_summary(result_path, num_lineups)
+        summary = _compute_export_summary(
+            result_path,
+            num_lineups,
+            salaries_path=Path(players_file) if players_file else None,
+            projections_path=Path(projections_file) if projections_file else None,
+        )
 
         with _JOBS_LOCK:
             if job_id in JOBS:
@@ -354,59 +360,387 @@ def _execute_optimization_job(job_id: str, temp_dir: Path, payload: Dict[str, An
                 JOBS[job_id]["logs"].append(f"[ERROR] {exc}")
 
 
-def _compute_export_summary(output_csv_path: Path, target_k: int) -> Dict[str, Any]:
-    """Analyzes the completed upload CSV to extract player exposure percentages for the UI."""
+def _clean_player_name(val: str) -> str:
+    """Extracts clean player name by removing ID prefixes (FanDuel) or suffixes (DraftKings)."""
+    clean_name = val.strip()
+    if ":" in clean_name:
+        parts = clean_name.split(":", 1)
+        if parts[1].strip():
+            clean_name = parts[1].strip()
+    if "(" in clean_name:
+        clean_name = clean_name.split("(", 1)[0].strip()
+    return clean_name
+
+
+def _compute_export_summary(
+    output_csv_path: Path,
+    target_k: int,
+    salaries_path: Optional[Path] = None,
+    projections_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Analyzes the completed upload CSV to extract player exposure percentages and roster lineups for the UI."""
     player_counts: Dict[str, int] = {}
+    player_positions: Dict[str, str] = {}
     total_lineups = 0
+    lineups: list[Dict[str, Any]] = []
+
+    # Build player metadata dictionary from salary and projection feeds if available
+    player_db: Dict[str, Dict[str, Any]] = {}
+    if salaries_path and Path(salaries_path).exists():
+        try:
+            with open(salaries_path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    if "first_name" in r and "last_name" in r:
+                        fn = (r.get("first_name") or "").strip()
+                        ln = (r.get("last_name") or "").strip()
+                        name = f"{fn} {ln}".strip() if ln else fn
+                    elif "First Name" in r and "Last Name" in r:
+                        fn = (r.get("First Name") or "").strip()
+                        ln = (r.get("Last Name") or "").strip()
+                        name = (r.get("Nickname") or f"{fn} {ln}").strip()
+                    else:
+                        name = (r.get("Nickname") or r.get("Name") or r.get("Player") or r.get("player") or "").strip()
+                    if not name:
+                        continue
+                    sal_str = (r.get("Salary") or r.get("salary") or "0").replace("$", "").replace(",", "").strip()
+                    try:
+                        salary = int(float(sal_str))
+                    except ValueError:
+                        salary = 0
+                    team = (r.get("Team") or r.get("team") or r.get("TeamAbbrev") or "").strip().upper()
+                    opp = (r.get("Opponent") or r.get("opp") or r.get("Opp") or "").strip()
+                    if not opp and "Game Info" in r:
+                        game_info = r.get("Game Info", "")
+                        if "@" in game_info:
+                            matchup = game_info.split()[0]
+                            teams = matchup.split("@")
+                            if len(teams) == 2:
+                                away, home = teams[0].strip().upper(), teams[1].strip().upper()
+                                if team == away:
+                                    opp = f"@{home}"
+                                elif team == home:
+                                    opp = f"vs {away}"
+                    pos = (r.get("Position") or r.get("position") or r.get("Roster Position") or "").strip().upper()
+                    # Prioritize forward-looking ppg_projection over historical szn_fppg_avg / FPPG
+                    fppg_str = (
+                        r.get("ppg_projection")
+                        or r.get("PPG_Projection")
+                        or r.get("ppg_proj")
+                        or r.get("projection")
+                        or r.get("Projection")
+                        or r.get("Points")
+                        or r.get("points")
+                        or r.get("FPPG")
+                        or r.get("AvgPointsPerGame")
+                        or "0"
+                    ).strip()
+                    try:
+                        fppg = round(float(fppg_str), 1)
+                    except ValueError:
+                        fppg = 0.0
+
+                    c_name = _clean_player_name(name).lower()
+                    entry = {
+                        "name": name,
+                        "salary": salary,
+                        "team": team,
+                        "opponent": opp,
+                        "position": pos,
+                        "fppg": fppg,
+                    }
+                    player_db[c_name] = entry
+                    norm_n = normalize_name(name)
+                    if norm_n:
+                        player_db[norm_n] = entry
+                    if pos in ("DEF", "DST", "D") or "defense" in name.lower() or "d/st" in name.lower():
+                        if team:
+                            player_db[normalize_name(team)] = entry
+                        clean_t = (
+                            name.lower()
+                            .replace("defense", "")
+                            .replace("d/st", "")
+                            .replace("dst", "")
+                            .replace("def", "")
+                            .strip()
+                        )
+                        if clean_t:
+                            player_db[normalize_name(clean_t)] = entry
+        except Exception as e:
+            logger.warning("Could not parse salaries_path for lineup inspector: %s", e)
+
+    if projections_path and Path(projections_path).exists():
+        try:
+            with open(projections_path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    if "first_name" in r and "last_name" in r:
+                        fn = (r.get("first_name") or "").strip()
+                        ln = (r.get("last_name") or "").strip()
+                        p_name = f"{fn} {ln}".strip() if ln else fn
+                    else:
+                        p_name = (
+                            r.get("Player")
+                            or r.get("player")
+                            or r.get("Name")
+                            or r.get("name")
+                            or r.get("player_name")
+                            or r.get("Nickname")
+                            or ""
+                        ).strip()
+                    if not p_name:
+                        continue
+                    c_name = _clean_player_name(p_name).lower()
+                    norm_p = normalize_name(p_name)
+                    pos = (r.get("position") or r.get("Position") or "").strip().upper()
+                    proj_str = (
+                        r.get("ppg_projection")
+                        or r.get("PPG_Projection")
+                        or r.get("ppg_proj")
+                        or r.get("PPG_Proj")
+                        or r.get("proj_fppg")
+                        or r.get("Proj_FPPG")
+                        or r.get("projection")
+                        or r.get("Projection")
+                        or r.get("Points")
+                        or r.get("points")
+                        or r.get("fantasy")
+                        or r.get("FPPG")
+                        or r.get("fppg")
+                        or ""
+                    ).strip()
+                    fppg_val: Optional[float] = None
+                    if proj_str:
+                        try:
+                            fppg_val = round(float(proj_str), 1)
+                        except ValueError:
+                            pass
+
+                    # Match existing entry in player_db
+                    matched = player_db.get(c_name) or player_db.get(norm_p)
+                    team_val = (r.get("team") or r.get("Team") or "").strip().upper()
+                    if not matched and (pos in ("DEF", "DST", "D") or "defense" in p_name.lower()):
+                        if team_val and normalize_name(team_val) in player_db:
+                            matched = player_db[normalize_name(team_val)]
+
+                    if matched:
+                        if fppg_val is not None:
+                            matched["fppg"] = fppg_val
+                        if pos and not matched.get("position"):
+                            matched["position"] = pos
+                    else:
+                        opp = (r.get("opp") or r.get("Opp") or r.get("Opponent") or "").strip()
+                        new_entry = {
+                            "name": p_name,
+                            "salary": 0,
+                            "team": team_val,
+                            "opponent": opp,
+                            "position": pos,
+                            "fppg": fppg_val or 0.0,
+                        }
+                        player_db[c_name] = new_entry
+                        if norm_p:
+                            player_db[norm_p] = new_entry
+                        if pos in ("DEF", "DST", "D") or "defense" in p_name.lower():
+                            if team_val:
+                                player_db[normalize_name(team_val)] = new_entry
+                            clean_t = (
+                                p_name.lower()
+                                .replace("defense", "")
+                                .replace("d/st", "")
+                                .replace("dst", "")
+                                .replace("def", "")
+                                .strip()
+                            )
+                            if clean_t:
+                                player_db[normalize_name(clean_t)] = new_entry
+        except Exception as e:
+            logger.warning("Could not parse projections_path for lineup inspector: %s", e)
+
+    salary_cap = 60000
 
     if output_csv_path.exists():
         with open(output_csv_path, "r", encoding="utf-8-sig", errors="ignore") as f:
-            reader = csv.reader(f)
-            header = next(reader, None)
+            csv_reader = csv.reader(f)
+            header = next(csv_reader, None)
             if header:
-                # Find player columns (typically slot columns starting from index 4 or named positions)
+                # Detect site salary cap
+                header_str = " ".join(header).upper()
+                if "DST" in header_str or "CPT" in header_str:
+                    salary_cap = 50000
+                elif "DEF" in header_str or "MVP" in header_str:
+                    salary_cap = 60000
+
+                # Find player columns
                 slot_indices = []
+                valid_slots = {
+                    "QB", "RB", "WR", "TE", "FLEX", "DST", "DEF",
+                    "MVP", "ANYFLEX", "CPT", "CAPTAIN", "UTIL", "SUPERFLEX",
+                }
                 for idx, col in enumerate(header):
                     col_u = col.strip().upper()
-                    if col_u in {"QB", "RB", "WR", "TE", "FLEX", "DST", "DEF", "MVP", "ANYFLEX", "CPT"} or (
-                        idx >= 4 and not col_u.startswith("ENTRY") and not col_u.startswith("CONTEST")
-                    ):
+                    first_tok = col_u.replace("-", " ").replace("_", " ").split()[0] if col_u else ""
+                    if col_u in valid_slots or first_tok in valid_slots:
+                        slot_indices.append(idx)
+                    elif idx >= 4 and not any(col_u.startswith(p) for p in ("ENTRY", "CONTEST", "INSTRUCTION", "LINEUP", "FEE", "DATE")) and col_u != "":
                         slot_indices.append(idx)
 
-                for row in reader:
-                    if not row or not any(field.strip() for field in row):
+                for row in csv_reader:
+                    if not row or not any(field.strip() for field in row) or not row[0].strip():
                         continue
                     total_lineups += 1
+                    if target_k > 0 and total_lineups > target_k:
+                        break
+
+                    row_slots: list[Dict[str, Any]] = []
+                    total_salary = 0
+                    total_fppg = 0.0
+                    qb_team = ""
+                    opp_team = ""
+
+                    # First pass: collect slot info and identify starting QB
                     for s_idx in slot_indices:
                         if s_idx < len(row):
                             val = row[s_idx].strip()
-                            if val:
-                                # Extract clean player name (strips FanDuel "ID:Name" and DraftKings "Name (ID)")
-                                clean_name = val
-                                if ":" in clean_name:
-                                    parts = clean_name.split(":", 1)
-                                    if parts[1].strip():
-                                        clean_name = parts[1].strip()
-                                if "(" in clean_name:
-                                    clean_name = clean_name.split("(", 1)[0].strip()
-                                player_counts[clean_name] = player_counts.get(clean_name, 0) + 1
+                            if not val:
+                                continue
+                            clean_name = _clean_player_name(val)
+                            player_counts[clean_name] = player_counts.get(clean_name, 0) + 1
 
-    # Sort exposures descending
+                            slot_label = header[s_idx].strip()
+                            p_info = player_db.get(clean_name.lower())
+                            if not p_info:
+                                p_info = player_db.get(normalize_name(clean_name))
+                            if not p_info and slot_label.upper() in ("DEF", "DST"):
+                                for tok in clean_name.lower().split():
+                                    norm_tok = normalize_name(tok)
+                                    if norm_tok in player_db:
+                                        p_info = player_db[norm_tok]
+                                        break
+                            if not p_info:
+                                p_info = {}
+
+                            p_salary = p_info.get("salary", 0)
+                            p_team = p_info.get("team", "")
+                            p_opp = p_info.get("opponent", "")
+                            p_fppg = p_info.get("fppg", 0.0)
+
+                            p_pos = p_info.get("position", "")
+                            if slot_label.upper() == "QB":
+                                player_positions[clean_name] = "QB"
+                            elif p_pos:
+                                player_positions[clean_name] = p_pos
+                            elif clean_name not in player_positions:
+                                player_positions[clean_name] = slot_label.upper()
+
+                            total_salary += p_salary
+                            total_fppg += p_fppg
+
+                            if slot_label.upper() == "QB" or (not qb_team and p_info.get("position", "").upper() == "QB"):
+                                qb_team = p_team
+                                opp_clean = p_opp.replace("@", "").replace("vs", "").strip().upper()
+                                if opp_clean:
+                                    opp_team = opp_clean
+
+                            row_slots.append({
+                                "slot": slot_label,
+                                "name": clean_name,
+                                "team": p_team or "-",
+                                "opponent": p_opp or "-",
+                                "salary": p_salary,
+                                "fppg": p_fppg,
+                            })
+
+                    # Second pass: tag stack correlation
+                    qb_stack_count = 0
+                    bring_back_count = 0
+                    for slot in row_slots:
+                        is_qb = (slot["slot"].upper() == "QB")
+                        if is_qb:
+                            slot["stack_type"] = "QB"
+                        elif qb_team and slot["team"] == qb_team and slot["team"] != "-":
+                            slot["stack_type"] = "Pass-Catcher"
+                            qb_stack_count += 1
+                        elif opp_team and slot["team"] == opp_team and slot["team"] != "-":
+                            slot["stack_type"] = "Bring-Back"
+                            bring_back_count += 1
+                        else:
+                            slot["stack_type"] = ""
+
+                    stack_badge = ""
+                    if qb_team and qb_stack_count > 0:
+                        stack_badge = f"{qb_team} (QB+{qb_stack_count})"
+                        if opp_team and bring_back_count > 0:
+                            stack_badge += f" vs {opp_team} ({bring_back_count})"
+                    elif qb_team:
+                        stack_badge = f"{qb_team} Solo"
+
+                    lineups.append({
+                        "index": total_lineups,
+                        "total_salary": total_salary,
+                        "salary_cap": salary_cap,
+                        "total_fppg": round(total_fppg, 1),
+                        "stack_badge": stack_badge or "Balanced",
+                        "slots": row_slots,
+                    })
+
+    # Partition exposures into Top 10 Quarterbacks and Top 10 Non-Quarterbacks
     denom = max(total_lineups, 1)
-    sorted_players = sorted(player_counts.items(), key=lambda item: item[1], reverse=True)
+    qb_players: Dict[str, int] = {}
+    non_qb_players: Dict[str, int] = {}
+
+    for name, count in player_counts.items():
+        pos = player_positions.get(name, "").upper()
+        if not pos and name.lower() in player_db:
+            pos = player_db[name.lower()].get("position", "").upper()
+
+        if pos == "QB" or "QB" in pos.split("/"):
+            qb_players[name] = count
+        else:
+            non_qb_players[name] = count
+
+    sorted_qbs = sorted(qb_players.items(), key=lambda item: item[1], reverse=True)
+    sorted_non_qbs = sorted(non_qb_players.items(), key=lambda item: item[1], reverse=True)
+    sorted_all = sorted(player_counts.items(), key=lambda item: item[1], reverse=True)
+
+    top_qb_exposures = [
+        {
+            "name": name,
+            "position": "QB",
+            "team": player_db.get(name.lower(), {}).get("team", "-"),
+            "count": count,
+            "exposure_pct": round((count / denom) * 100, 1),
+        }
+        for name, count in sorted_qbs[:10]
+    ]
+
+    top_non_qb_exposures = [
+        {
+            "name": name,
+            "position": player_positions.get(name, player_db.get(name.lower(), {}).get("position", "-")),
+            "team": player_db.get(name.lower(), {}).get("team", "-"),
+            "count": count,
+            "exposure_pct": round((count / denom) * 100, 1),
+        }
+        for name, count in sorted_non_qbs[:10]
+    ]
+
     top_exposures = [
         {
             "name": name,
             "count": count,
             "exposure_pct": round((count / denom) * 100, 1),
         }
-        for name, count in sorted_players[:15]
+        for name, count in sorted_all[:15]
     ]
 
     return {
         "num_lineups": total_lineups,
         "unique_players_count": len(player_counts),
         "top_exposures": top_exposures,
+        "top_qb_exposures": top_qb_exposures,
+        "top_non_qb_exposures": top_non_qb_exposures,
+        "lineups": lineups,
     }
 
 
@@ -567,6 +901,9 @@ class DFSOptimizerHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         self.wfile.write(content)
 

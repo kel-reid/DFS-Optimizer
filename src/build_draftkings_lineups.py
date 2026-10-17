@@ -229,6 +229,19 @@ class DraftKingsDataLoader:
                 self.config.projections_csv,
                 zero_unprojected=self.config.zero_unprojected,
             )
+        elif csv_path.exists():
+            try:
+                with open(csv_path, "r", encoding="utf-8-sig") as f:
+                    header = f.readline()
+                    if "ppg_projection" in header.lower():
+                        from src.data.projections import apply_forward_projections
+                        apply_forward_projections(
+                            optimizer,
+                            csv_path,
+                            zero_unprojected=self.config.zero_unprojected,
+                        )
+            except Exception:
+                pass
 
         # Filter backup QBs
         backup_qbs = set(self.config.backup_quarterbacks or ())

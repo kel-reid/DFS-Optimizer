@@ -219,6 +219,117 @@ def test_compute_export_summary(tmp_path: Path):
     assert judkins["count"] == 1
 
 
+def test_compute_export_summary_lineups_with_salaries_and_projections(tmp_path: Path):
+    salaries_file = tmp_path / "DKSalaries.csv"
+    salaries_file.write_text(
+        "Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame\n"
+        "QB,Josh Allen (1001),Josh Allen,1001,QB,8000,BUF@MIA,BUF,24.0\n"
+        "WR,Stefon Diggs (1002),Stefon Diggs,1002,WR,7500,BUF@MIA,BUF,18.0\n"
+        "WR,Tyreek Hill (1003),Tyreek Hill,1003,WR,8200,BUF@MIA,MIA,20.0\n"
+        "DST,Bills (1004),Bills,1004,DST,3000,BUF@MIA,BUF,8.0\n"
+    )
+    projections_file = tmp_path / "projections.csv"
+    projections_file.write_text(
+        "Player,Team,Position,Projection\n"
+        "Josh Allen,BUF,QB,25.5\n"
+        "Stefon Diggs,BUF,WR,19.2\n"
+        "Tyreek Hill,MIA,WR,21.0\n"
+        "Bills,BUF,DST,7.5\n"
+    )
+    out_file = tmp_path / "Output.csv"
+    out_file.write_text(
+        "Entry ID,Contest ID,Contest Name,Entry Fee,QB,WR,WR,DST\n"
+        "1,100,Contest,$1.00,Josh Allen (1001),Stefon Diggs (1002),Tyreek Hill (1003),Bills (1004)\n"
+    )
+
+    summary = _compute_export_summary(
+        out_file,
+        target_k=1,
+        salaries_path=salaries_file,
+        projections_path=projections_file,
+    )
+    assert "lineups" in summary
+    assert len(summary["lineups"]) == 1
+    lu = summary["lineups"][0]
+    assert lu["index"] == 1
+    assert lu["total_salary"] == 26700
+    assert lu["salary_cap"] == 50000  # Detected DK cap from DST slot
+    assert round(lu["total_fppg"], 1) == 73.2
+    assert "BUF (QB+2) vs MIA (1)" in lu["stack_badge"]
+    assert len(lu["slots"]) == 4
+
+    # Check QB role
+    qb_slot = next(s for s in lu["slots"] if s["slot"] == "QB")
+    assert qb_slot["name"] == "Josh Allen"
+    assert qb_slot["stack_type"] == "QB"
+
+    # Check stack role
+    diggs_slot = next(s for s in lu["slots"] if s["name"] == "Stefon Diggs")
+    assert diggs_slot["stack_type"] == "Pass-Catcher"
+
+    # Check bring back role
+    tyreek_slot = next(s for s in lu["slots"] if s["name"] == "Tyreek Hill")
+    assert tyreek_slot["stack_type"] == "Bring-Back"
+
+
+def test_compute_export_summary_cheatsheet_ppg_projection_and_split_exposures(tmp_path: Path):
+    # Simulates Daily Fantasy Fuel cheatsheet with both historical szn_fppg_avg and forward ppg_projection
+    cheatsheet_file = tmp_path / "DFF_cheatsheet.csv"
+    cheatsheet_file.write_text(
+        "first_name,last_name,position,team,opp,salary,szn_fppg_avg,ppg_projection\n"
+        "Jared,Goff,QB,DET,CAR,7800,16.5,22.8\n"
+        "Amon-Ra,St. Brown,WR,DET,CAR,8400,15.2,20.4\n"
+        "Chuba,Hubbard,RB,CAR,@DET,6500,12.0,15.6\n"
+        "Lions,Defense,DEF,DET,CAR,4200,8.0,9.5\n"
+    )
+
+    out_file = tmp_path / "Completed-FD.csv"
+    out_file.write_text(
+        "entry_id,contest_id,contest_name,entry_fee,QB,WR,FLEX,DEF\n"
+        "1,100,Contest,$1.00,135023-1:Jared Goff,135023-2:Amon-Ra St. Brown,135023-3:Chuba Hubbard,135023-4:Lions Defense\n"
+    )
+
+    summary = _compute_export_summary(
+        out_file,
+        target_k=1,
+        salaries_path=cheatsheet_file,
+        projections_path=cheatsheet_file,
+    )
+
+    # 1. Verify PROJ FPPG uses ppg_projection (22.8) and NOT szn_fppg_avg (16.5)
+    slots = summary["lineups"][0]["slots"]
+    goff_slot = next(s for s in slots if s["name"] == "Jared Goff")
+    assert goff_slot["fppg"] == 22.8
+    assert goff_slot["salary"] == 7800
+    assert goff_slot["stack_type"] == "QB"
+
+    amon_slot = next(s for s in slots if s["name"] == "Amon-Ra St. Brown")
+    assert amon_slot["fppg"] == 20.4
+    assert amon_slot["stack_type"] == "Pass-Catcher"
+
+    hubbard_slot = next(s for s in slots if s["name"] == "Chuba Hubbard")
+    assert hubbard_slot["fppg"] == 15.6
+    assert hubbard_slot["stack_type"] == "Bring-Back"
+
+    # Total lineup projection sum: 22.8 + 20.4 + 15.6 + 9.5 = 68.3
+    assert summary["lineups"][0]["total_fppg"] == 68.3
+
+    # 2. Verify split exposures: top_qb_exposures vs top_non_qb_exposures
+    assert "top_qb_exposures" in summary
+    assert "top_non_qb_exposures" in summary
+
+    qb_names = [p["name"] for p in summary["top_qb_exposures"]]
+    non_qb_names = [p["name"] for p in summary["top_non_qb_exposures"]]
+
+    assert "Jared Goff" in qb_names
+    assert "Jared Goff" not in non_qb_names
+    assert "Amon-Ra St. Brown" in non_qb_names
+    assert "Chuba Hubbard" in non_qb_names
+    assert "Lions Defense" in non_qb_names
+
+
+
+
 def test_http_get_index_and_static_files():
     # 1. GET /
     status, headers, body = simulate_request("GET", "/")
