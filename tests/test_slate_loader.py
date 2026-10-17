@@ -297,8 +297,8 @@ def test_modern_fanduel_6_player_single_game_schema_and_mvp_salary(tmp_path: Pat
             ("P9", "K", "Tyler", "Tyler Bass", "Bass", "8.0", "4", "5000", "7500", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
             ("P10", "WR", "Keon", "Keon Coleman", "Coleman", "7.0", "4", "4500", "6750", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
         ]
-        for row in players_data:
-            writer.writerow(row)
+        for p_row in players_data:
+            writer.writerow(p_row)
 
     # Write 6-player Single Game template (1 MVP + 5 AnyFLEX)
     with open(template_csv, "w", newline="", encoding="utf-8") as f:
@@ -328,7 +328,7 @@ def test_modern_fanduel_6_player_single_game_schema_and_mvp_salary(tmp_path: Pat
     # 3. Optimize 1 lineup and verify 6 players
     lineups = list(opt.optimize(1))
     assert len(lineups) == 1
-    assert len(lineups[0].lineup) == 6
+    assert len(list(lineups[0].lineup)) == 6
     assert lineups[0].salary_costs <= 60000.0
 
     # 4. Export and verify all 10 columns are preserved
@@ -344,9 +344,9 @@ def test_modern_fanduel_6_player_single_game_schema_and_mvp_salary(tmp_path: Pat
         assert exported_header[5] == "AnyFLEX"
         assert exported_header[9] == "AnyFLEX"
 
-        row = next(reader)
-        assert len(row) == 10
-        assert ":" in row[4]  # MVP populated
-        assert ":" in row[9]  # 5th AnyFLEX populated
+        exported_row = next(reader)
+        assert len(exported_row) == 10
+        assert ":" in exported_row[4]  # MVP populated
+        assert ":" in exported_row[9]  # 5th AnyFLEX populated
 
 
