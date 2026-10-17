@@ -263,6 +263,7 @@ class DraftKingsDataLoader:
             pos_col = "Position" if "Position" in df.columns else "Roster Position"
             id_to_pos = dict(zip(df[id_col].astype(str), df[pos_col].astype(str).str.strip().str.upper()))
             for p in optimizer.player_pool.all_players:
+                # pyrefly: ignore [unnecessary-type-conversion]
                 orig = id_to_pos.get(str(p.id))
                 if orig:
                     p.underlying_position = orig  # type: ignore[attr-defined]
@@ -308,6 +309,7 @@ class DraftKingsDataLoader:
         inactive_ids = set(inactive_df[id_col].astype(str))
         removed_count = 0
         for player in list(optimizer.player_pool.all_players):
+            # pyrefly: ignore [unnecessary-type-conversion]
             if str(player.id) in inactive_ids:
                 optimizer.player_pool.remove_player(player)
                 removed_count += 1

@@ -136,6 +136,7 @@ class CandidatePoolGenerator:
         self.optimizer = optimizer
         self.config = config
         self.players: List[Player] = list(optimizer.player_pool.filtered_players)
+        # pyrefly: ignore [unnecessary-type-conversion]
         self.player_to_idx: Dict[str, int] = {str(p.id): idx for idx, p in enumerate(self.players)}
 
     @staticmethod
@@ -162,6 +163,7 @@ class CandidatePoolGenerator:
 
     def _clone_optimizer(self) -> LineupOptimizer:
         site = self.optimizer.settings.site
+        # pyrefly: ignore [bad-argument-type]
         opt = get_optimizer(site, Sport.FOOTBALL)
         if hasattr(self.optimizer.settings, "positions"):
             positions = self.optimizer.settings.positions[:]
