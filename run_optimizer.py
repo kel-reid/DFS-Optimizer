@@ -48,11 +48,14 @@ def main() -> None:
     parser.add_argument("--date", type=str, default=None)
     parser.add_argument("--ui", action="store_true", help="Launch the local drag-and-drop web dashboard")
     parser.add_argument("--port", type=int, default=8500, help="Local web dashboard port (default: 8500)")
+    parser.add_argument("--open-browser", action="store_true", default=False, help="Automatically open web browser on launch")
+    parser.add_argument("--no-browser", action="store_true", default=False, help="Do not automatically open web browser on launch")
     args, _ = parser.parse_known_args()
 
     if args.ui:
         from src.ui.server import start_ui_server
-        start_ui_server(port=args.port)
+        auto_open = args.open_browser and not args.no_browser
+        start_ui_server(port=args.port, auto_open=auto_open)
         return
 
     site = resolve_site(

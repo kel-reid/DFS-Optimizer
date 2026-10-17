@@ -10,6 +10,21 @@
   - **Recommendation**:
 - Do not manually request reviews from automated review bots on pull requests; let automated webhook triggers or the user handle review requests.
 
+## Contest Results Analysis Protocol
+
+Whenever contest results are analyzed, separate the analysis cleanly for **DraftKings** and **FanDuel**, and for each contest include:
+1. **Contest Name** (Do not show Contest ID)
+2. **Overall Letter Grade** (A, B, C, D, E, F)
+3. **ROI**
+   - Total Entry Fees
+   - Actual Return
+   - Actual ROI
+4. **What Went Well**
+5. **What Went Wrong**
+6. **Recommendation for Improvement**
+
+
+
 ## Senior Engineering Protocols
 
 - **Anti-Regression & Invariant Tracing Protocol**: When addressing code review comments, bug reports, or algorithmic edge cases, never perform isolated line edits that only address the cited lines. Explicitly trace and verify the change across the entire pipeline:

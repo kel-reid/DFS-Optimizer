@@ -201,8 +201,15 @@ class DraftKingsDataLoader:
         if not csv_path.exists():
             raise FileNotFoundError(f"DraftKings player CSV not found at: {csv_path.resolve()}")
 
-        logger.info("Initializing DraftKings Football Optimizer with PuLP/CBC backend...")
-        optimizer = get_optimizer(Site.DRAFTKINGS, Sport.FOOTBALL)
+        is_single_game = self._detect_single_game(csv_path)
+        self.config.is_single_game = is_single_game
+        site = Site.DRAFTKINGS_CAPTAIN_MODE if is_single_game else Site.DRAFTKINGS
+
+        logger.info(
+            "Initializing DraftKings Football Optimizer (%s) with PuLP/CBC backend...",
+            "Showdown / Captain Mode" if is_single_game else "Classic",
+        )
+        optimizer = get_optimizer(site, Sport.FOOTBALL)
 
         logger.info("Loading player pool directly from CSV: %s", csv_path)
         optimizer.load_players_from_csv(str(csv_path))
@@ -222,6 +229,19 @@ class DraftKingsDataLoader:
                 self.config.projections_csv,
                 zero_unprojected=self.config.zero_unprojected,
             )
+        elif csv_path.exists():
+            try:
+                with open(csv_path, "r", encoding="utf-8-sig") as f:
+                    header = f.readline()
+                    if "ppg_projection" in header.lower():
+                        from src.data.projections import apply_forward_projections
+                        apply_forward_projections(
+                            optimizer,
+                            csv_path,
+                            zero_unprojected=self.config.zero_unprojected,
+                        )
+            except Exception:
+                pass
 
         # Filter backup QBs
         backup_qbs = set(self.config.backup_quarterbacks or ())
@@ -235,6 +255,31 @@ class DraftKingsDataLoader:
 
             if zeroed_count > 0:
                 logger.info("Pre-solve filter: Zeroed out projected FPPG for %d non-starting backup QBs.", zeroed_count)
+
+        # Attach underlying position from DKSalaries.csv (e.g. K, DST, QB, WR, RB, TE)
+        try:
+            df = pd.read_csv(csv_path)
+            id_col = "ID" if "ID" in df.columns else "Id"
+            pos_col = "Position" if "Position" in df.columns else "Roster Position"
+            id_to_pos = dict(zip(df[id_col].astype(str), df[pos_col].astype(str).str.strip().str.upper()))
+            for p in optimizer.player_pool.all_players:
+                # pyrefly: ignore [unnecessary-type-conversion]
+                orig = id_to_pos.get(str(p.id))
+                if orig:
+                    p.underlying_position = orig  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.warning("Could not map underlying positions: %s", e)
+
+        # In Single Game / Showdown, restrict K and DST from the 1.5x Captain slot (FLEX eligible only)
+        if is_single_game:
+            removed_cpts = 0
+            for p in list(optimizer.player_pool.all_players):
+                orig = getattr(p, "underlying_position", "")
+                if orig in ("K", "DST") and "CPT" in p.positions:
+                    optimizer.player_pool.remove_player(p)
+                    removed_cpts += 1
+            if removed_cpts > 0:
+                logger.info("Showdown Rule: Restricted %d Kicker/Defense entries from CPT pool (FLEX eligible only).", removed_cpts)
 
         return optimizer
 
@@ -264,6 +309,7 @@ class DraftKingsDataLoader:
         inactive_ids = set(inactive_df[id_col].astype(str))
         removed_count = 0
         for player in list(optimizer.player_pool.all_players):
+            # pyrefly: ignore [unnecessary-type-conversion]
             if str(player.id) in inactive_ids:
                 optimizer.player_pool.remove_player(player)
                 removed_count += 1
@@ -271,6 +317,31 @@ class DraftKingsDataLoader:
         if removed_count > 0:
             logger.info("Pruned %d confirmed inactive/IR players (retained active & Questionable pool: %d players).",
                         removed_count, len(optimizer.player_pool.all_players))
+
+    def _detect_single_game(self, csv_path: Path) -> bool:
+        """Detects whether target contest format is Single Game / Showdown vs Classic."""
+        if getattr(self.config, "is_single_game", False):
+            return True
+        if getattr(self.config, "slate", None) in ("sunday-night", "monday-night", "thursday-night", "single-game", "showdown"):
+            return True
+        if getattr(self.config, "template_csv", None) and self.config.template_csv.exists():
+            try:
+                with open(self.config.template_csv, "r", encoding="utf-8-sig") as f:
+                    header = f.readline()
+                    if "CPT" in header:
+                        return True
+            except Exception:
+                pass
+        try:
+            df = pd.read_csv(csv_path)
+            if "Roster Position" in df.columns:
+                roster_pos = df["Roster Position"].dropna().astype(str)
+                if any("CPT" in p for p in roster_pos):
+                    return True
+        except Exception:
+            pass
+        return False
+
 
 
 # -----------------------------------------------------------------------------
@@ -501,8 +572,8 @@ class DraftKingsPortfolioAuditor:
                 else:
                     unconstrained_count += 1
 
-            # Negative Correlation Check (DST vs Opposing Offense)
-            if dst_player and dst_player.game_info:
+            # Negative Correlation Check (DST vs Opposing Offense - Classic only)
+            if not getattr(config, "is_single_game", False) and dst_player and dst_player.game_info:
                 dst_team = dst_player.team
                 game = dst_player.game_info
                 opp_team = game.home_team if game.away_team == dst_team else game.away_team
@@ -517,7 +588,11 @@ class DraftKingsPortfolioAuditor:
         def get_cap(player: Union[Player, LineupPlayer]) -> int:
             n = total_lineups
             positions = set(player.positions)
-            if "DST" in positions or "D" in positions:
+            orig = getattr(player, "underlying_position", "")
+            if orig:
+                positions.add(orig)
+
+            if "DST" in positions or "D" in positions or "K" in positions:
                 return math.floor(n * config.max_def_exposure)
             elif "QB" in positions:
                 return math.floor(n * config.max_qb_exposure)
@@ -631,9 +706,12 @@ class DraftKingsTemplateExporter:
                 f"Row mismatch: Template has {len(rows)} reserved entries, but {len(lineups)} lineups were generated."
             )
 
-        # Slot indices 4 to 12
+        # Slot indices 4 to 12 (or 4 to 9 for Showdown)
         for i, lineup in enumerate(lineups):
-            for slot_idx, p in enumerate(lineup.lineup, start=4):
+            ordered_lineup = list(lineup.lineup)
+            if getattr(self.config, "is_single_game", False):
+                ordered_lineup.sort(key=lambda p: 0 if "CPT" in (getattr(p, "lineup_position", "") or p.positions) else 1)
+            for slot_idx, p in enumerate(ordered_lineup, start=4):
                 if self.config.id_format == "name_id":
                     val = f"{p.full_name} ({p.id})"
                 else:
@@ -740,6 +818,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
     parser.add_argument("--date", type=str, default=default_cfg.slate_date, help="Slate date in YYYY-MM-DD format (e.g. 2026-10-04).")
     parser.add_argument("--zero-unprojected", action="store_true", default=default_cfg.zero_unprojected)
     parser.add_argument("--keep-unprojected", action="store_true", default=False)
+    parser.add_argument("--single-game", action="store_true", default=default_cfg.is_single_game, help="Force Single Game / Showdown format.")
 
     args = parser.parse_args()
 
@@ -808,6 +887,7 @@ def parse_dk_arguments() -> DKOptimizerConfig:
         exclude_out_injured=exclude_injured,
         strict_exposure_caps=args.strict_caps,
         zero_unprojected=zero_unproj,
+        is_single_game=args.single_game,
     )
 
 
@@ -837,7 +917,7 @@ def run_draftkings_pipeline(
     if progress_callback:
         progress_callback(35, f"Stage 1: Generating candidate pool of {config.num_candidates} lineups via MILP...")
     candidate_generator = CandidatePoolGenerator(optimizer, config)
-    candidates, candidates_matrix = candidate_generator.generate_candidate_pool()
+    candidates, candidates_matrix = candidate_generator.generate_candidate_pool(progress_callback=progress_callback)
 
     # 3. Stage 2: Simulate Opponent Field Lineups
     if progress_callback:

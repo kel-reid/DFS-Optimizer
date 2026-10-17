@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from pydfs_lineup_optimizer import (
@@ -136,6 +136,7 @@ class CandidatePoolGenerator:
         self.optimizer = optimizer
         self.config = config
         self.players: List[Player] = list(optimizer.player_pool.filtered_players)
+        # pyrefly: ignore [unnecessary-type-conversion]
         self.player_to_idx: Dict[str, int] = {str(p.id): idx for idx, p in enumerate(self.players)}
 
     @staticmethod
@@ -160,15 +161,25 @@ class CandidatePoolGenerator:
             return True
         return False
 
-    def generate_candidate_pool(self) -> Tuple[List[Lineup], np.ndarray]:
+    def _clone_optimizer(self) -> LineupOptimizer:
+        site = self.optimizer.settings.site
+        # pyrefly: ignore [bad-argument-type]
+        opt = get_optimizer(site, Sport.FOOTBALL)
+        if hasattr(self.optimizer.settings, "positions"):
+            positions = self.optimizer.settings.positions[:]
+            opt.settings.positions = positions
+            opt.settings.get_total_players = lambda: len(positions)  # type: ignore[method-assign]
+            opt.player_pool._remaining_positions = positions[:]
+        return opt
+
+    def generate_candidate_pool(
+        self, progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> Tuple[List[Lineup], np.ndarray]:
         """
-        Solves 500 candidates:
-          - 200 Game Stack with Bring-Back (QB + same WR/TE + opp WR/TE) [40%]
-          - 200 Primary Stacked (QB + >= 1 same-team WR/TE) [40%]
-          - 100 Unconstrained (capturing standalone rushing QB ceiling) [20%]
+        Solves candidate lineups across Game Stack, Primary Stack, and Unconstrained phases.
         Returns:
-          lineups: List of 500 Lineup objects
-          candidates_matrix: Binary ndarray of shape (500, P)
+          lineups: List of Lineup objects
+          candidates_matrix: Binary ndarray of shape (N, P)
         """
         n_total = self.config.num_candidates
         ratio = self.config.stack_ratio
@@ -202,7 +213,7 @@ class CandidatePoolGenerator:
 
         max_rep = min(self.config.max_repeating_players, total_slots - 1)
         site = self.optimizer.settings.site
-        def_pos = ["DST"] if site == Site.DRAFTKINGS else ["D"]
+        def_pos = ["DST"] if site in (Site.DRAFTKINGS, Site.DRAFTKINGS_CAPTAIN_MODE) else ["D"]
 
         # Baseline constraints for candidates
         self.optimizer.set_max_repeating_players(max_rep)
@@ -217,7 +228,7 @@ class CandidatePoolGenerator:
         elif len(self.optimizer.player_pool.available_teams) == 2:
             self.optimizer.set_total_teams(min_teams=2)
 
-        self.optimizer.settings.max_from_one_team = 4
+        self.optimizer.settings.max_from_one_team = total_slots - 1 if is_single_game else 4
         self.optimizer.settings.budget = self.config.salary_cap
         # Ensure diversity across candidates by setting max exposure during candidate phase
         num_teams = len(self.optimizer.player_pool.available_teams)
@@ -258,8 +269,14 @@ class CandidatePoolGenerator:
             )
             for i, lineup in enumerate(self.optimizer.optimize(n=n_game_stack), start=1):
                 candidates.append(lineup)
-                if i % 100 == 0 or i == n_game_stack:
+                if i % 50 == 0 or i == n_game_stack:
                     logger.info("... Solved %d / %d game stacked candidates (%.1fs) ...", i, n_game_stack, time.time() - t0)
+                if progress_callback and (len(candidates) % 25 == 0 or len(candidates) == n_total):
+                    pct = 15 + int((len(candidates) / max(n_total, 1)) * 40)
+                    progress_callback(
+                        pct,
+                        f"Stage 1: Solved {len(candidates)} / {n_total} candidate lineups ({time.time() - t0:.1f}s)...",
+                    )
 
         # Phase 2: Primary Stacked Lineups
         target_stacked = n_game_stack + n_primary_stack
@@ -269,7 +286,7 @@ class CandidatePoolGenerator:
                 "Solving %d primary stacked candidate lineups (QB + same-team WR/TE)..." if not is_single_game else "Solving %d candidate lineups for Single Game slate...",
                 needed_primary,
             )
-            opt_primary = get_optimizer(site, Sport.FOOTBALL)
+            opt_primary = self._clone_optimizer()
             opt_primary.player_pool.load_players(self.players)
             opt_primary.player_pool.with_injured = True
             opt_primary.set_max_repeating_players(max_rep)
@@ -286,7 +303,7 @@ class CandidatePoolGenerator:
             elif len(opt_primary.player_pool.available_teams) == 2:
                 opt_primary.set_total_teams(min_teams=2)
 
-            opt_primary.settings.max_from_one_team = 4
+            opt_primary.settings.max_from_one_team = total_slots - 1 if is_single_game else 4
             opt_primary.settings.budget = self.config.salary_cap
             for p in opt_primary.player_pool.filtered_players:
                 p.max_exposure = cand_max_exp if p.fppg > 0.0 else 0.0
@@ -295,15 +312,30 @@ class CandidatePoolGenerator:
             t1 = time.time()
             solved_primary = 0
             search_n = max(50, needed_primary * 5)
+            consecutive_rejections = 0
             for lineup in opt_primary.optimize(n=search_n):
                 l_set = set(p.id for p in lineup.lineup)
                 if any(len(l_set & prev_set) > max_rep for prev_set in accepted_sets):
+                    consecutive_rejections += 1
+                    if consecutive_rejections >= 50:
+                        logger.info(
+                            "Candidate space saturated for primary stacks after 50 consecutive collisions (%d candidates total); proceeding...",
+                            len(candidates),
+                        )
+                        break
                     continue
+                consecutive_rejections = 0
                 candidates.append(lineup)
                 accepted_sets.append(l_set)
                 solved_primary += 1
-                if solved_primary % 100 == 0 or solved_primary == needed_primary:
+                if solved_primary % 50 == 0 or solved_primary == needed_primary:
                     logger.info("... Solved %d / %d primary stacked candidate lineups (%.1fs) ...", solved_primary, needed_primary, time.time() - t1)
+                if progress_callback and (len(candidates) % 25 == 0 or len(candidates) == n_total):
+                    pct = 15 + int((len(candidates) / max(n_total, 1)) * 40)
+                    progress_callback(
+                        pct,
+                        f"Stage 1: Solved {len(candidates)} / {n_total} candidate lineups ({time.time() - t0:.1f}s)...",
+                    )
                 if solved_primary == needed_primary:
                     break
 
@@ -311,7 +343,7 @@ class CandidatePoolGenerator:
         needed_unconstrained = n_total - len(candidates)
         if needed_unconstrained > 0:
             logger.info("Solving %d unconstrained candidate lineups...", needed_unconstrained)
-            opt_unconstrained = get_optimizer(site, Sport.FOOTBALL)
+            opt_unconstrained = self._clone_optimizer()
             opt_unconstrained.player_pool.load_players(self.players)
             opt_unconstrained.player_pool.with_injured = True
             opt_unconstrained.set_max_repeating_players(max_rep)
@@ -326,7 +358,7 @@ class CandidatePoolGenerator:
             elif len(opt_unconstrained.player_pool.available_teams) == 2:
                 opt_unconstrained.set_total_teams(min_teams=2)
 
-            opt_unconstrained.settings.max_from_one_team = 4
+            opt_unconstrained.settings.max_from_one_team = total_slots - 1 if is_single_game else 4
             opt_unconstrained.settings.budget = self.config.salary_cap
             for p in opt_unconstrained.player_pool.filtered_players:
                 p.max_exposure = cand_max_exp if p.fppg > 0.0 else 0.0
@@ -336,10 +368,19 @@ class CandidatePoolGenerator:
             t2 = time.time()
             solved_unconstrained = 0
             search_n = max(50, needed_unconstrained * 5)
+            consecutive_rejections = 0
             for lineup in opt_unconstrained.optimize(n=search_n):
                 l_set = set(p.id for p in lineup.lineup)
                 if any(len(l_set & prev_set) > max_rep for prev_set in accepted_sets):
+                    consecutive_rejections += 1
+                    if consecutive_rejections >= 50:
+                        logger.info(
+                            "Candidate space saturated for unconstrained lineups after 50 consecutive collisions (%d candidates total); proceeding...",
+                            len(candidates),
+                        )
+                        break
                     continue
+                consecutive_rejections = 0
                 candidates.append(lineup)
                 accepted_sets.append(l_set)
                 solved_unconstrained += 1
@@ -350,9 +391,17 @@ class CandidatePoolGenerator:
                         needed_unconstrained,
                         time.time() - t2,
                     )
+                if progress_callback and (len(candidates) % 25 == 0 or len(candidates) == n_total):
+                    pct = 15 + int((len(candidates) / max(n_total, 1)) * 40)
+                    progress_callback(
+                        pct,
+                        f"Stage 1: Solved {len(candidates)} / {n_total} candidate lineups ({time.time() - t0:.1f}s)...",
+                    )
                 if solved_unconstrained == needed_unconstrained:
                     break
 
+        if progress_callback:
+            progress_callback(55, f"Stage 1 Complete: {len(candidates)} diverse candidate rosters generated in {time.time() - t0:.1f}s.")
         logger.info("Successfully generated %d candidate lineups. Building binary matrix...", len(candidates))
 
         # Encode candidates into binary/weighted NumPy matrix C in {0, 1, 1.5}^(N x P)

@@ -185,7 +185,7 @@ python run_optimizer.py --ui
 * **Auto-Detection**: Automatically identifies the platform (DraftKings vs. FanDuel), format (Classic vs. Single Game / Showdown), entry fee, and reserved entries count.
 * **Visual Exposure Controls**: Sliders for target lineup volume ($K$), primary stack ratio ($80\%$), and position exposure ceilings ($25\%$ QB, $25\%$ Skill, $20\%$ DEF).
 * **Live Simulation Telemetry**: Real-time progress across all 4 simulation stages with streaming terminal logs.
-* **Instant Download**: One-click **"Download Completed Lineups CSV"** saves the populated file directly to your browser's downloads folder.
+* **Instant Download**: One-click **"Download Completed Lineups"** saves the populated file directly to your browser's downloads folder.
 
 ### 4. Containerized Execution (Docker & Docker Compose)
 

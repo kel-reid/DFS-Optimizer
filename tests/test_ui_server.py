@@ -122,6 +122,36 @@ def test_inspect_csv_data_draftkings_showdown():
     assert result["num_entries"] == 1
 
 
+def test_inspect_csv_data_multi_contest_draftkings():
+    showdown_players = (
+        "Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame\n"
+        "CPT,Bo Nix (101),Bo Nix,101,CPT/FLEX,14400,SEA@DEN,DEN,14.0\n"
+        "FLEX,Bo Nix (102),Bo Nix,102,CPT/FLEX,9600,SEA@DEN,DEN,14.0\n"
+    )
+    # Template with two distinct contests and fees: 2 entries @ $0.25, 2 entries @ $0.10
+    template = (
+        "Entry ID,Contest Name,Contest ID,Entry Fee,CPT,FLEX,FLEX,FLEX,FLEX,FLEX\n"
+        "1001,Quarter Jukebox,196689723,$0.25,,,,,\n"
+        "1002,Quarter Jukebox,196689723,$0.25,,,,,\n"
+        "2001,Dime Package,196689724,$0.10,,,,,\n"
+        "2002,Dime Package,196689724,$0.10,,,,,\n"
+    )
+    result = _inspect_csv_data(showdown_players, template)
+    assert result["platform"] == "draftkings"
+    assert result["is_single_game"] is True
+    assert result["num_entries"] == 4
+    assert result["unique_fees"] == [0.10, 0.25]
+    assert result["total_entry_fee"] == 0.70
+    assert result["entry_fee_display"] == "$0.10, $0.25"
+    assert result["entry_fee_sub"] == "($0.70 Total)"
+    assert len(result["contests"]) == 2
+    assert result["contests"][0]["name"] == "Quarter Jukebox"
+    assert result["contests"][0]["count"] == 2
+    assert result["contests"][1]["name"] == "Dime Package"
+    assert result["contests"][1]["count"] == 2
+
+
+
 def test_inspect_csv_data_fanduel():
     fd_players = (
         "Id,Position,First Name,Last Name,Nickname,Salary,FPPG,Team,Opponent,Injury Indicator\n"
@@ -141,6 +171,23 @@ def test_inspect_csv_data_fanduel():
     assert result["entry_fee"] == 0.05
     assert result["num_entries"] == 2
     assert result["num_players"] == 2
+
+
+def test_inspect_csv_data_fanduel_single_game():
+    fd_players = (
+        "Id,Position,First Name,Last Name,Nickname,Salary,FPPG,Team,Opponent,Injury Indicator\n"
+        "101,QB,Josh,Allen,Josh Allen,16500,24.5,BUF,LAR,\n"
+        "102,QB,Matthew,Stafford,Matthew Stafford,14000,18.2,LAR,BUF,\n"
+    )
+    fd_single_game_template = (
+        'entry_id,contest_id,contest_name,entry_fee,MVP,AnyFLEX,AnyFLEX,AnyFLEX,AnyFLEX\n'
+        '"3743770838","135023-280945024","$5K Mon NFL Single Game","0.05","","","","",""\n'
+    )
+    result = _inspect_csv_data(fd_players, fd_single_game_template)
+    assert result["platform"] == "fanduel"
+    assert result["is_single_game"] is True
+    assert result["entry_fee"] == 0.05
+    assert result["num_entries"] == 1
 
 
 def test_compute_export_summary(tmp_path: Path):
@@ -170,6 +217,117 @@ def test_compute_export_summary(tmp_path: Path):
     assert judkins is not None
     assert judkins["name"] == "Quinshon Judkins"
     assert judkins["count"] == 1
+
+
+def test_compute_export_summary_lineups_with_salaries_and_projections(tmp_path: Path):
+    salaries_file = tmp_path / "DKSalaries.csv"
+    salaries_file.write_text(
+        "Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame\n"
+        "QB,Josh Allen (1001),Josh Allen,1001,QB,8000,BUF@MIA,BUF,24.0\n"
+        "WR,Stefon Diggs (1002),Stefon Diggs,1002,WR,7500,BUF@MIA,BUF,18.0\n"
+        "WR,Tyreek Hill (1003),Tyreek Hill,1003,WR,8200,BUF@MIA,MIA,20.0\n"
+        "DST,Bills (1004),Bills,1004,DST,3000,BUF@MIA,BUF,8.0\n"
+    )
+    projections_file = tmp_path / "projections.csv"
+    projections_file.write_text(
+        "Player,Team,Position,Projection\n"
+        "Josh Allen,BUF,QB,25.5\n"
+        "Stefon Diggs,BUF,WR,19.2\n"
+        "Tyreek Hill,MIA,WR,21.0\n"
+        "Bills,BUF,DST,7.5\n"
+    )
+    out_file = tmp_path / "Output.csv"
+    out_file.write_text(
+        "Entry ID,Contest ID,Contest Name,Entry Fee,QB,WR,WR,DST\n"
+        "1,100,Contest,$1.00,Josh Allen (1001),Stefon Diggs (1002),Tyreek Hill (1003),Bills (1004)\n"
+    )
+
+    summary = _compute_export_summary(
+        out_file,
+        target_k=1,
+        salaries_path=salaries_file,
+        projections_path=projections_file,
+    )
+    assert "lineups" in summary
+    assert len(summary["lineups"]) == 1
+    lu = summary["lineups"][0]
+    assert lu["index"] == 1
+    assert lu["total_salary"] == 26700
+    assert lu["salary_cap"] == 50000  # Detected DK cap from DST slot
+    assert round(lu["total_fppg"], 1) == 73.2
+    assert "BUF (QB+2) vs MIA (1)" in lu["stack_badge"]
+    assert len(lu["slots"]) == 4
+
+    # Check QB role
+    qb_slot = next(s for s in lu["slots"] if s["slot"] == "QB")
+    assert qb_slot["name"] == "Josh Allen"
+    assert qb_slot["stack_type"] == "QB"
+
+    # Check stack role
+    diggs_slot = next(s for s in lu["slots"] if s["name"] == "Stefon Diggs")
+    assert diggs_slot["stack_type"] == "Pass-Catcher"
+
+    # Check bring back role
+    tyreek_slot = next(s for s in lu["slots"] if s["name"] == "Tyreek Hill")
+    assert tyreek_slot["stack_type"] == "Bring-Back"
+
+
+def test_compute_export_summary_cheatsheet_ppg_projection_and_split_exposures(tmp_path: Path):
+    # Simulates Daily Fantasy Fuel cheatsheet with both historical szn_fppg_avg and forward ppg_projection
+    cheatsheet_file = tmp_path / "DFF_cheatsheet.csv"
+    cheatsheet_file.write_text(
+        "first_name,last_name,position,team,opp,salary,szn_fppg_avg,ppg_projection\n"
+        "Jared,Goff,QB,DET,CAR,7800,16.5,22.8\n"
+        "Amon-Ra,St. Brown,WR,DET,CAR,8400,15.2,20.4\n"
+        "Chuba,Hubbard,RB,CAR,@DET,6500,12.0,15.6\n"
+        "Lions,Defense,DEF,DET,CAR,4200,8.0,9.5\n"
+    )
+
+    out_file = tmp_path / "Completed-FD.csv"
+    out_file.write_text(
+        "entry_id,contest_id,contest_name,entry_fee,QB,WR,FLEX,DEF\n"
+        "1,100,Contest,$1.00,135023-1:Jared Goff,135023-2:Amon-Ra St. Brown,135023-3:Chuba Hubbard,135023-4:Lions Defense\n"
+    )
+
+    summary = _compute_export_summary(
+        out_file,
+        target_k=1,
+        salaries_path=cheatsheet_file,
+        projections_path=cheatsheet_file,
+    )
+
+    # 1. Verify PROJ FPPG uses ppg_projection (22.8) and NOT szn_fppg_avg (16.5)
+    slots = summary["lineups"][0]["slots"]
+    goff_slot = next(s for s in slots if s["name"] == "Jared Goff")
+    assert goff_slot["fppg"] == 22.8
+    assert goff_slot["salary"] == 7800
+    assert goff_slot["stack_type"] == "QB"
+
+    amon_slot = next(s for s in slots if s["name"] == "Amon-Ra St. Brown")
+    assert amon_slot["fppg"] == 20.4
+    assert amon_slot["stack_type"] == "Pass-Catcher"
+
+    hubbard_slot = next(s for s in slots if s["name"] == "Chuba Hubbard")
+    assert hubbard_slot["fppg"] == 15.6
+    assert hubbard_slot["stack_type"] == "Bring-Back"
+
+    # Total lineup projection sum: 22.8 + 20.4 + 15.6 + 9.5 = 68.3
+    assert summary["lineups"][0]["total_fppg"] == 68.3
+
+    # 2. Verify split exposures: top_qb_exposures vs top_non_qb_exposures
+    assert "top_qb_exposures" in summary
+    assert "top_non_qb_exposures" in summary
+
+    qb_names = [p["name"] for p in summary["top_qb_exposures"]]
+    non_qb_names = [p["name"] for p in summary["top_non_qb_exposures"]]
+
+    assert "Jared Goff" in qb_names
+    assert "Jared Goff" not in non_qb_names
+    assert "Amon-Ra St. Brown" in non_qb_names
+    assert "Chuba Hubbard" in non_qb_names
+    assert "Lions Defense" in non_qb_names
+
+
 
 
 def test_http_get_index_and_static_files():
@@ -446,3 +604,45 @@ def test_execute_optimization_job_sanitizes_template_filename(tmp_path: Path):
         # Template written during job execution must be sanitized to basename
         written_template = tmp_path / "malicious_template.csv"
         assert written_template.exists()
+
+
+def test_start_ui_server_auto_open_flag():
+    """Verifies that start_ui_server defaults auto_open to False and only opens browser when True."""
+    from src.ui.server import start_ui_server
+
+    # Test auto_open=False (default): webbrowser.open should NOT be called
+    with patch("src.ui.server.ThreadingHTTPServer") as mock_server_cls, \
+         patch("src.ui.server.webbrowser.open") as mock_browser:
+        mock_instance = mock_server_cls.return_value
+        mock_instance.serve_forever.side_effect = KeyboardInterrupt
+        start_ui_server(port=9999, auto_open=False)
+        mock_browser.assert_not_called()
+
+    # Test auto_open=True: webbrowser.open SHOULD be called
+    with patch("src.ui.server.ThreadingHTTPServer") as mock_server_cls, \
+         patch("src.ui.server.webbrowser.open") as mock_browser:
+        mock_instance = mock_server_cls.return_value
+        mock_instance.serve_forever.side_effect = KeyboardInterrupt
+        start_ui_server(port=9999, auto_open=True)
+        mock_browser.assert_called_once_with("http://localhost:9999")
+
+
+def test_run_optimizer_ui_browser_flags():
+    """Verifies run_optimizer.py CLI parses --ui and browser flags correctly."""
+    import run_optimizer
+
+    with patch("sys.argv", ["run_optimizer.py", "--ui"]), \
+         patch("src.ui.server.start_ui_server") as mock_start:
+        run_optimizer.main()
+        mock_start.assert_called_once_with(port=8500, auto_open=False)
+
+    with patch("sys.argv", ["run_optimizer.py", "--ui", "--open-browser"]), \
+         patch("src.ui.server.start_ui_server") as mock_start:
+        run_optimizer.main()
+        mock_start.assert_called_once_with(port=8500, auto_open=True)
+
+    with patch("sys.argv", ["run_optimizer.py", "--ui", "--open-browser", "--no-browser"]), \
+         patch("src.ui.server.start_ui_server") as mock_start:
+        run_optimizer.main()
+        mock_start.assert_called_once_with(port=8500, auto_open=False)
+

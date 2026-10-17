@@ -75,14 +75,14 @@ class PortfolioSelector:
         is_single_game = getattr(self.config, "is_single_game", False)
         sg_default_cap = getattr(self.config, "single_game_max_exposure", 0.65)
         classic_default = 0.25
-        classic_def_default = 0.20
 
         def get_cap(player: Player) -> int:
             pos = set(player.positions)
-            if "D" in pos or "DST" in pos:
+            orig = getattr(player, "underlying_position", "")
+            if orig:
+                pos.add(orig)
+            if "D" in pos or "DST" in pos or "K" in pos:
                 cap_rate = self.config.max_def_exposure
-                if is_single_game and cap_rate == classic_def_default:
-                    cap_rate = sg_default_cap
             elif "QB" in pos:
                 cap_rate = self.config.max_qb_exposure
                 if is_single_game and cap_rate == classic_default:

@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=2.0">
 </head>
 
 <body>
@@ -27,13 +27,7 @@
               <span class="pulse-dot"></span> Ready for Ingestion
             </span>
           </div>
-          <p class="brand-subtitle">Quantitative Monte Carlo Simulation Engine</p>
         </div>
-      </div>
-      <div class="header-badges">
-        <span class="platform-pill" id="platform-badge-pill">
-          <span id="detected-platform-text">Auto-Detecting Platform</span>
-        </span>
       </div>
     </header>
 
@@ -43,7 +37,6 @@
       <section class="card glass-card ingestion-section">
         <div class="card-header">
           <div class="card-title-group">
-            <span class="step-num">1</span>
             <h2>Contest Ingestion Hub</h2>
           </div>
           <p class="card-desc">Drag and drop your official contest CSV files from your browser's Downloads folder. No
@@ -106,13 +99,14 @@
             <span class="metric-label">Detected Platform</span>
             <span class="metric-val" id="metric-platform">-</span>
           </div>
-          <div class="metric-item">
+          <div class="metric-item" id="metric-item-format">
             <span class="metric-label">Contest Format</span>
             <span class="metric-val" id="metric-format">-</span>
           </div>
-          <div class="metric-item">
+          <div class="metric-item" id="metric-item-fee">
             <span class="metric-label">Entry Fee</span>
             <span class="metric-val" id="metric-fee">$1.00</span>
+            <span class="metric-sub hidden" id="metric-fee-sub"></span>
           </div>
           <div class="metric-item">
             <span class="metric-label">Reserved Entries</span>
@@ -129,103 +123,439 @@
       <section class="card glass-card config-section">
         <div class="card-header">
           <div class="card-title-group">
-            <span class="step-num">2</span>
-            <h2>Portfolio Exposure & Simulation Controls</h2>
+            <h2>Portfolio Exposure & Simulation</h2>
           </div>
         </div>
 
         <div class="config-content" id="config-content">
+          <!-- Contest Profile Selector (Option A: SaberSim-style Contest Profiles) -->
+          <div class="preset-bar-wrap">
+            <div class="preset-label-group">
+              <span class="preset-title">
+                Contest Profile (Target Structure)
+              </span>
+              <span class="preset-desc">Calibrates exposure limits, correlation stacks, and objective for your contest
+                size</span>
+            </div>
+            <div class="preset-controls">
+              <select id="strategy-preset" class="select-input preset-select">
+                <option value="large_gpp">Large-Field GPP (150-Max)</option>
+                <option value="mid_gpp">Mid-Size GPP (20-Max)</option>
+                <option value="small_field">Small-Field / Single Entry</option>
+                <option value="cash">Cash Games (50/50s & Double-Ups)</option>
+                <option value="custom">Custom Configuration</option>
+              </select>
+            </div>
+          </div>
+
           <div class="sliders-grid">
             <!-- Lineups K -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="num-lineups">Portfolio Entries (K)</label>
+                <div class="control-label-group">
+                  <label for="num-lineups">Portfolio Entries (K)</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Portfolio Entries Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Target number of contest upload rows to populate.
+                    </div>
+                  </div>
+                </div>
                 <span class="val-badge" id="val-num-lineups">150</span>
               </div>
               <input type="range" id="num-lineups" min="1" max="150" value="150" step="1" class="custom-slider">
-              <span class="control-hint">Target number of contest upload rows to populate</span>
             </div>
 
             <!-- Primary Stack Ratio -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="stack-ratio">Primary Correlation Stack</label>
+                <div class="control-label-group">
+                  <label for="stack-ratio">Primary Correlation Stack</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Primary Correlation Stack Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      QB + WR/TE primary franchise correlation stack allocation.
+                    </div>
+                  </div>
+                </div>
                 <span class="val-badge" id="val-stack-ratio">80%</span>
               </div>
               <input type="range" id="stack-ratio" min="0" max="100" value="80" step="5" class="custom-slider">
-              <span class="control-hint">QB + WR/TE primary franchise correlation stack allocation</span>
+            </div>
+
+            <!-- Game Stack Ratio -->
+            <div class="control-box">
+              <div class="control-label-row">
+                <div class="control-label-group">
+                  <label for="game-stack-ratio">Game Stack Shootout Ratio</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Game Stack Shootout Ratio Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      QB + Pass-Catchers + Opposing Bring-Back game shootout stack (clamped &le; Primary Stack).
+                    </div>
+                  </div>
+                </div>
+                <span class="val-badge" id="val-game-stack-ratio">40%</span>
+              </div>
+              <input type="range" id="game-stack-ratio" min="0" max="100" value="40" step="5" class="custom-slider">
             </div>
 
             <!-- QB Ceiling -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="max-qb-exposure">Quarterback Max Exposure</label>
+                <div class="control-label-group">
+                  <label for="max-qb-exposure">Quarterback Max Exposure</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Quarterback Max Exposure Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Hard ceiling per QB (<span id="qb-max-count">37</span> / <span class="total-k-label">150</span>
+                      rosters).
+                    </div>
+                  </div>
+                </div>
                 <span class="val-badge" id="val-max-qb-exposure">25%</span>
               </div>
               <input type="range" id="max-qb-exposure" min="5" max="100" value="25" step="1" class="custom-slider">
-              <span class="control-hint">Hard ceiling per QB (<span id="qb-max-count">37</span> / 150 rosters)</span>
             </div>
 
             <!-- Skill Positions Ceiling -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="max-skill-exposure">Skill Positions Max Exposure (RB / WR / TE)</label>
+                <div class="control-label-group">
+                  <label for="max-skill-exposure">Skill Positions Max Exposure</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Skill Positions Max Exposure Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Hard ceiling per skill starter (RB / WR / TE): <span id="skill-max-count">37</span> / <span
+                        class="total-k-label">150</span> rosters.
+                    </div>
+                  </div>
+                </div>
                 <span class="val-badge" id="val-max-skill-exposure">25%</span>
               </div>
               <input type="range" id="max-skill-exposure" min="5" max="100" value="25" step="1" class="custom-slider">
-              <span class="control-hint">Hard ceiling per skill starter (<span id="skill-max-count">37</span> / 150
-                rosters)</span>
             </div>
 
-            <!-- Defense Ceiling -->
+            <!-- Defense & Special Teams Ceiling -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="max-def-exposure">Team Defense Max Exposure (DEF / DST)</label>
+                <div class="control-label-group">
+                  <label for="max-def-exposure">Team Defense Max Exposure</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Team Defense Max Exposure Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Hard ceiling per defense / kicker unit (DEF / DST / K): <span id="def-max-count">30</span> / <span
+                        class="total-k-label">150</span> rosters.
+                    </div>
+                  </div>
+                </div>
                 <span class="val-badge" id="val-max-def-exposure">20%</span>
               </div>
               <input type="range" id="max-def-exposure" min="5" max="100" value="20" step="1" class="custom-slider">
-              <span class="control-hint">Hard ceiling per defensive unit (<span id="def-max-count">30</span> / 150
-                rosters)</span>
             </div>
 
             <!-- Lineup Uniqueness -->
             <div class="control-box">
               <div class="control-label-row">
-                <label for="max-repeating">Max Repeating Players</label>
+                <div class="control-label-group">
+                  <label for="max-repeating">Max Repeating Players</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Max Repeating Players Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Guarantees &ge; <span id="repeating-diff-count">3</span> unique player(s) between every roster
+                      pair.
+                    </div>
+                  </div>
+                </div>
                 <span class="val-badge" id="val-max-repeating">6</span>
               </div>
-              <input type="range" id="max-repeating" min="3" max="8" value="6" step="1" class="custom-slider">
-              <span class="control-hint">Guarantees &ge; 3 unique players between every roster pair</span>
+              <input type="range" id="max-repeating" min="2" max="8" value="6" step="1" class="custom-slider">
             </div>
           </div>
 
-          <!-- Advanced Toggle -->
-          <details class="advanced-details">
-            <summary class="advanced-summary">Advanced Simulation Parameters (Monte Carlo Scale & Pruning)</summary>
+          <!-- Advanced Simulation Parameters -->
+          <div class="advanced-section">
+            <h3 class="advanced-header">Advanced Simulation Parameters (Monte Carlo Scale & Pruning)</h3>
             <div class="advanced-grid">
+              <!-- Portfolio Objective -->
               <div class="input-field">
-                <label for="num-candidates">MILP Candidates (N)</label>
-                <input type="number" id="num-candidates" value="500" min="50" max="1000" class="num-input">
+                <div class="input-label-group">
+                  <label for="selection-metric">Portfolio Objective</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Portfolio Objective Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Tournament ranking metric optimized across simulated fields (99.9th percentile ceiling score,
+                      expected ROI, or 1st-place win probability).
+                    </div>
+                  </div>
+                </div>
+                <select id="selection-metric" class="select-input">
+                  <option value="ceiling" selected>99.9th Percentile Ceiling</option>
+                  <option value="roi">Expected Simulated ROI</option>
+                  <option value="win_rate">1st Place Win Rate</option>
+                </select>
               </div>
+
+              <!-- MILP Candidates (N) -->
               <div class="input-field">
-                <label for="num-field">Opponent Field Size (M)</label>
-                <input type="number" id="num-field" value="10000" min="1000" max="25000" class="num-input">
+                <div class="input-label-group">
+                  <label for="num-candidates">MILP Candidates (N)</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="MILP Candidates Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Total mathematically valid candidate rosters generated by the MILP solver before Monte Carlo
+                      simulation pruning.
+                    </div>
+                  </div>
+                </div>
+                <input type="number" id="num-candidates" value="500" min="50" max="5000" class="num-input">
               </div>
+
+              <!-- Opponent Field Size (M) -->
               <div class="input-field">
-                <label for="num-trials">Game Outcome Trials (T)</label>
-                <input type="number" id="num-trials" value="5000" min="500" max="10000" class="num-input">
+                <div class="input-label-group">
+                  <label for="num-field">Opponent Field Size (M)</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Opponent Field Size Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Size of the simulated tournament opponent pool generated from ownership distributions to model
+                      contest dynamics.
+                    </div>
+                  </div>
+                </div>
+                <input type="number" id="num-field" value="10000" min="1000" max="50000" class="num-input">
               </div>
+
+              <!-- Game Outcome Trials (T) -->
               <div class="input-field">
-                <label for="randomness-dev">Variance Dev Multiplier</label>
-                <input type="number" id="randomness-dev" value="0.25" min="0.05" max="0.50" step="0.05"
+                <div class="input-label-group">
+                  <label for="num-trials">Game Outcome Trials (T)</label>
+                  <div class="info-popup-wrapper popup-right">
+                    <button type="button" class="info-btn" aria-label="Game Outcome Trials Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Number of Monte Carlo game outcome trials executed to simulate player variance, game pace, and
+                      correlated outcomes.
+                    </div>
+                  </div>
+                </div>
+                <input type="number" id="num-trials" value="5000" min="500" max="25000" class="num-input">
+              </div>
+
+              <!-- Variance Dev Multiplier -->
+              <div class="input-field">
+                <div class="input-label-group">
+                  <label for="randomness-dev">Variance Dev Multiplier</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Variance Dev Multiplier Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Standard deviation scaling factor applied during Monte Carlo trials to model fantasy scoring
+                      spread and volatility.
+                    </div>
+                  </div>
+                </div>
+                <input type="number" id="randomness-dev" value="0.25" min="0.05" max="0.50" step="0.01"
                   class="num-input">
               </div>
+
+              <!-- Max Cumulative Ownership -->
+              <div class="input-field">
+                <div class="input-label-group">
+                  <label for="max-total-ownership">Max Cumulative Ownership</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Max Cumulative Ownership Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Hard ceiling on the cumulative projected ownership % per roster to enforce contrarian tournament
+                      leverage (leave blank for unconstrained).
+                    </div>
+                  </div>
+                </div>
+                <input type="number" id="max-total-ownership" placeholder="e.g. 115% (blank = unconstrained)" min="50"
+                  max="300" step="5" class="num-input">
+              </div>
+
+              <!-- Primary Pass-Catchers -->
+              <div class="input-field">
+                <div class="input-label-group">
+                  <label for="primary-stack-size">Primary Pass-Catchers</label>
+                  <div class="info-popup-wrapper">
+                    <button type="button" class="info-btn" aria-label="Primary Pass-Catchers Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Number of same-team pass-catchers (WR or TE) paired with the starting quarterback in every
+                      generated roster (QB + X).
+                    </div>
+                  </div>
+                </div>
+                <select id="primary-stack-size" class="select-input">
+                  <option value="1" selected>1 Receiver (Single Stack)</option>
+                  <option value="2">2 Receivers (Double Stack)</option>
+                </select>
+              </div>
+
+              <!-- Opponent Bring-Backs -->
+              <div class="input-field">
+                <div class="input-label-group">
+                  <label for="bring-back-size">Opponent Bring-Backs</label>
+                  <div class="info-popup-wrapper popup-right">
+                    <button type="button" class="info-btn" aria-label="Opponent Bring-Backs Info">
+                      <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                    <div class="info-popup" role="tooltip">
+                      Number of opposing offensive skill players included from the quarterback's game to capitalize on
+                      high-scoring shootouts.
+                    </div>
+                  </div>
+                </div>
+                <select id="bring-back-size" class="select-input">
+                  <option value="0">0 (No Bring-Back)</option>
+                  <option value="1" selected>1 Opposing Player</option>
+                  <option value="2">2 Opposing Players</option>
+                </select>
+              </div>
+
+              <!-- Team Defense Stack -->
+              <div class="checkbox-field">
+                <input type="checkbox" id="team-defense-stack">
+                <label for="team-defense-stack">Pair Team Defense with QB (DST Stack)</label>
+                <div class="info-popup-wrapper">
+                  <button type="button" class="info-btn" aria-label="Team Defense Stack Info">
+                    <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+                      stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                  </button>
+                  <div class="info-popup" role="tooltip">
+                    Restricts the defense / special teams unit to match the starting quarterback's team for positive
+                    game-script correlation.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Strict Caps -->
               <div class="checkbox-field">
                 <input type="checkbox" id="strict-caps">
-                <label for="strict-caps">Strict exposure caps enforcement (fail on cap overage)</label>
+                <label for="strict-caps">Strict Exposure Caps Enforcement</label>
+                <div class="info-popup-wrapper">
+                  <button type="button" class="info-btn" aria-label="Strict Exposure Caps Info">
+                    <svg class="info-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+                      stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                  </button>
+                  <div class="info-popup" role="tooltip">
+                    Fails with an error on cap overage instead of allowing solver fallback fills when constraints are
+                    tight.
+                  </div>
+                </div>
               </div>
             </div>
-          </details>
+          </div>
         </div>
       </section>
 
@@ -276,75 +606,271 @@
         </div>
       </section>
 
-      <!-- Section 4: Export & Analytics Dashboard -->
-      <section id="results-section" class="card glass-card results-section hidden">
-        <div class="results-banner">
-          <div class="success-icon-wrap">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-          </div>
-          <div>
-            <h2 class="results-title">Tournament Portfolio Ready for Upload!</h2>
-            <p class="results-desc">Lineups successfully mapped into contest template format with preserved entry IDs.
-            </p>
+      <!-- Section 4: Export & Analytics Dashboard (Always Displayed) -->
+      <section id="results-section" class="card glass-card results-section">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h2>Tournament Portfolio &amp; Lineup Inspector</h2>
           </div>
         </div>
 
-        <!-- Download Action -->
-        <div class="download-action-row">
-          <button id="btn-download" class="btn btn-download btn-huge">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span id="download-btn-text">Download Completed Lineups CSV</span>
+        <!-- Post-Generation Results Banner & Download Action -->
+        <div id="results-ready-banner" class="results-ready-banner hidden">
+          <div class="results-banner">
+            <div class="success-icon-wrap">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <div>
+              <h2 class="results-title">Tournament Portfolio Ready for Upload!</h2>
+              <p class="results-desc">Lineups successfully mapped into contest template format with preserved entry IDs.
+              </p>
+            </div>
+          </div>
+
+          <!-- Download Action -->
+          <div class="download-action-row">
+            <button id="btn-download" class="btn btn-download btn-huge">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span id="download-btn-text">Download Completed Lineups</span>
+            </button>
+            <button id="btn-reset" class="btn btn-secondary">Optimize Another Contest</button>
+          </div>
+
+          <!-- Portfolio Metrics Summary -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="metric-num" id="res-num-lineups">150</span>
+              <span class="metric-caption">Exported Lineups</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-num" id="res-unique-players">-</span>
+              <span class="metric-caption">Unique Players Used</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-num" id="res-primary-stack">80%</span>
+              <span class="metric-caption">Primary Stack Volume</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-num" id="res-repeating">≤ 6</span>
+              <span class="metric-caption">Uniqueness Bound (≥ 3 Diff)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results Tabs Navigation (Always Displayed) -->
+        <div class="results-tabs-nav">
+          <button type="button" class="tab-btn active" id="tab-btn-exposures" data-tab="tab-pane-exposures">
+            <span>Player Exposures</span>
           </button>
-          <button id="btn-reset" class="btn btn-secondary">Optimize Another Contest</button>
+          <button type="button" class="tab-btn" id="tab-btn-lineups" data-tab="tab-pane-lineups">
+            <span>Lineup Inspector</span>
+          </button>
         </div>
 
-        <!-- Portfolio Metrics Summary -->
-        <div class="metrics-grid">
-          <div class="metric-card">
-            <span class="metric-num" id="res-num-lineups">150</span>
-            <span class="metric-caption">Exported Lineups</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-num" id="res-unique-players">-</span>
-            <span class="metric-caption">Unique Players Used</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-num" id="res-primary-stack">80%</span>
-            <span class="metric-caption">Primary Stack Volume</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-num" id="res-repeating">≤ 6</span>
-            <span class="metric-caption">Uniqueness Bound (≥ 3 Diff)</span>
+        <!-- Tab 1: Player Exposures -->
+        <div class="tab-pane active" id="tab-pane-exposures">
+          <div class="exposures-container">
+            <div class="exposures-header">
+              <div>
+                <h3>Player Exposure Distribution</h3>
+              </div>
+            </div>
+
+            <div class="exposures-split-grid">
+              <!-- Sub-Table 1: Top 10 Quarterbacks -->
+              <div class="exposures-subcard">
+                <div class="exposures-subcard-header">
+                  <div class="exposures-subcard-title">
+                    <span class="pos-badge pos-qb">QB</span>
+                    <h4>Top 10 Quarterbacks</h4>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="exposures-table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>Entries</th>
+                        <th>Exposure</th>
+                        <th>Distribution</th>
+                      </tr>
+                    </thead>
+                    <tbody id="qb-exposures-table-body">
+                      <tr>
+                        <td colspan="5" class="empty-state-cell">Generate lineups to see results.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Sub-Table 2: Top 10 Non-Quarterbacks -->
+              <div class="exposures-subcard">
+                <div class="exposures-subcard-header">
+                  <div class="exposures-subcard-title">
+                    <span class="pos-badge pos-skill">Skill / Def</span>
+                    <h4>Top 10 Non-Quarterbacks</h4>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="exposures-table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Pos</th>
+                        <th>Team</th>
+                        <th>Entries</th>
+                        <th>Exposure</th>
+                        <th>Distribution</th>
+                      </tr>
+                    </thead>
+                    <tbody id="non-qb-exposures-table-body">
+                      <tr>
+                        <td colspan="6" class="empty-state-cell">Generate lineups to see results.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Top Exposures Breakdown -->
-        <div class="exposures-container">
-          <div class="exposures-header">
-            <h3>Player Exposure Distribution (Top 15 Starters)</h3>
-            <span class="exposures-subtitle">Audited against 25% QB / 25% Skill / 20% DEF caps</span>
+        <!-- Tab 2: Lineup Inspector -->
+        <div class="tab-pane" id="tab-pane-lineups">
+          <div id="lineup-empty-state" class="lineup-empty-state">
+            <p class="empty-state-text">Generate lineups to see results.</p>
           </div>
-          <div class="table-wrap">
-            <table class="exposures-table">
-              <thead>
-                <tr>
-                  <th>Player Name</th>
-                  <th>Rostered Entries</th>
-                  <th>Exposure</th>
-                  <th>Visual Distribution</th>
-                </tr>
-              </thead>
-              <tbody id="exposures-table-body">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
+
+          <div id="lineup-inspector-container" class="lineup-inspector-container hidden">
+            <!-- Lineup Navigation Header -->
+            <div class="lineup-nav-bar">
+              <div class="lineup-nav-left">
+                <span class="lineup-nav-label">Roster:</span>
+                <div class="lineup-pagination-group">
+                  <button type="button" id="btn-prev-lineup" class="lineup-nav-btn" aria-label="Previous Lineup"
+                    title="Previous Lineup">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2.5">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+                  <select id="lineup-select" class="lineup-select-dropdown" aria-label="Select Lineup Number">
+                    <!-- Populated dynamically: Lineup #1, Lineup #2, ... -->
+                  </select>
+                  <button type="button" id="btn-next-lineup" class="lineup-nav-btn" aria-label="Next Lineup"
+                    title="Next Lineup">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2.5">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
+                </div>
+                <span class="lineup-counter-badge" id="lineup-counter-text">Lineup 1 of 150</span>
+              </div>
+
+              <div class="lineup-nav-right">
+                <span class="lineup-badge badge-salary" id="lineup-salary-badge">Salary: $59,800 / $60,000</span>
+                <span class="lineup-badge badge-fppg" id="lineup-fppg-badge">148.4 Proj FPPG</span>
+                <span class="lineup-badge badge-stack" id="lineup-stack-badge">DET (QB+2) vs CAR (1)</span>
+              </div>
+            </div>
+
+            <!-- Lineup Roster Table -->
+            <div class="table-wrap">
+              <table class="lineup-slots-table">
+                <thead>
+                  <tr>
+                    <th>Slot</th>
+                    <th>Player</th>
+                    <th>Team</th>
+                    <th>Opponent</th>
+                    <th>Salary</th>
+                    <th>Proj FPPG</th>
+                    <th>
+                      <div class="th-with-info">
+                        <span>Correlation / Role</span>
+                        <div class="info-popup-wrapper popup-right inline-info">
+                          <button type="button" class="info-btn" aria-label="Correlation / Role Column Info">
+                            <svg class="info-icon" viewBox="0 0 24 24" width="13" height="13" fill="none"
+                              stroke="currentColor" stroke-width="2">
+                              <circle cx="12" cy="12" r="10"></circle>
+                              <line x1="12" y1="16" x2="12" y2="12"></line>
+                              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                          </button>
+                          <div class="info-popup" role="tooltip">
+                            Identifies player synergy within game stacks: QB Anchor, primary Pass-Catcher, opposing
+                            Bring-Back, or standalone one-off. See legend below.
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="lineup-slots-body">
+                  <!-- Populated dynamically with the roster rows -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Correlation / Role Legend Card -->
+            <div class="correlation-legend-card">
+              <div class="legend-header">
+                <div class="legend-title">
+                  <svg class="legend-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                    stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                  <h4>Correlation / Role Legend</h4>
+                </div>
+                <span class="legend-subtitle">Game stack covariance roles designed for GPP tournament ceiling</span>
+              </div>
+              <div class="legend-items-grid">
+                <div class="legend-item">
+                  <span class="role-pill role-qb">★ QB</span>
+                  <div class="legend-item-desc">
+                    <span class="legend-role-title">Primary Quarterback Anchor</span>
+                    <span class="legend-role-text">The centerpiece passer anchoring the lineup's primary scoring engine.
+                      Pass-catchers directly covary with his passing production.</span>
+                  </div>
+                </div>
+                <div class="legend-item">
+                  <span class="role-pill role-stack">⚡ Pass-Catcher</span>
+                  <div class="legend-item-desc">
+                    <span class="legend-role-title">Primary Stack Partner</span>
+                    <span class="legend-role-text">Same-team WR, TE, or RB. When the QB throws touchdowns or yards to
+                      this player, fantasy points are double-counted simultaneously.</span>
+                  </div>
+                </div>
+                <div class="legend-item">
+                  <span class="role-pill role-bringback">⮑ Bring-Back</span>
+                  <div class="legend-item-desc">
+                    <span class="legend-role-title">Opposing Game Stack Partner</span>
+                    <span class="legend-role-text">Offensive player from the opposing team in the same matchup,
+                      capitalizing on shootout game script and 4th-quarter comeback volume.</span>
+                  </div>
+                </div>
+                <div class="legend-item">
+                  <span class="role-pill role-standalone">-</span>
+                  <div class="legend-item-desc">
+                    <span class="legend-role-title">Uncorrelated Standalone</span>
+                    <span class="legend-role-text">High-leverage volume play or salary-saving value from other games
+                      across the slate filling out the roster without diluting the stack.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -352,11 +878,13 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <div>NFL DFS Optimization Engine | Built for FanDuel and DraftKings MME Tournaments | Kel Reid &copy; 2026</div>
+      <div>NFL DFS Optimization Engine | Built for FanDuel and DraftKings MME Tournaments | VA Predictions Inc &copy;
+        2026
+      </div>
     </footer>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2.0"></script>
 </body>
 
 </html>

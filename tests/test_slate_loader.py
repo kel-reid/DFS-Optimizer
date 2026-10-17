@@ -263,3 +263,90 @@ def test_exposure_caps_environment_variables(monkeypatch: pytest.MonkeyPatch):
     assert dk_cfg2.max_def_exposure == 0.15
     assert dk_cfg2.max_exposure == 0.60
 
+
+def test_modern_fanduel_6_player_single_game_schema_and_mvp_salary(tmp_path: Path):
+    """
+    Verifies that when a modern FanDuel Single Game template (1 MVP + 5 AnyFLEX)
+    and players CSV with 'MVP 1.5x Salary' are provided:
+    1. DataLoader configures 6 total roster spots (1 MVP + 5 AnyFLEX).
+    2. MVP players are assigned their 1.5x salary.
+    3. Exporter retains all 10 columns (4 metadata + 6 positions) without truncating.
+    """
+    players_csv = tmp_path / "players.csv"
+    template_csv = tmp_path / "template.csv"
+    output_csv = tmp_path / "completed.csv"
+
+    # Write mock players CSV with MVP 1.5x Salary
+    with open(players_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Id", "Position", "First Name", "Nickname", "Last Name", "FPPG", "Played",
+            "Salary", "MVP 1.5x Salary", "Game", "Team", "Opponent", "Injury Indicator",
+            "Injury Details", "Tier", "", "", "Roster Position"
+        ])
+        # Add 10 active players
+        players_data = [
+            ("P1", "QB", "Josh", "Josh Allen", "Allen", "25.0", "4", "13000", "19500", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P2", "QB", "Matt", "Matt Stafford", "Stafford", "18.0", "4", "12000", "18000", "BUF@LAR", "LAR", "BUF", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P3", "RB", "James", "James Cook", "Cook", "16.0", "4", "11000", "16500", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P4", "RB", "Kyren", "Kyren Williams", "Williams", "17.0", "4", "10000", "15000", "BUF@LAR", "LAR", "BUF", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P5", "WR", "Puka", "Puka Nacua", "Nacua", "15.0", "4", "9500", "14250", "BUF@LAR", "LAR", "BUF", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P6", "WR", "Davante", "Davante Adams", "Adams", "14.0", "4", "9000", "13500", "BUF@LAR", "LAR", "BUF", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P7", "WR", "Khalil", "Khalil Shakir", "Shakir", "10.0", "4", "7000", "10500", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P8", "TE", "Dalton", "Dalton Kincaid", "Kincaid", "9.0", "4", "6000", "9000", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P9", "K", "Tyler", "Tyler Bass", "Bass", "8.0", "4", "5000", "7500", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+            ("P10", "WR", "Keon", "Keon Coleman", "Coleman", "7.0", "4", "4500", "6750", "BUF@LAR", "BUF", "LAR", "", "", "", "", "", "MVP - 1.5X Points/AnyFLEX"),
+        ]
+        for p_row in players_data:
+            writer.writerow(p_row)
+
+    # Write 6-player Single Game template (1 MVP + 5 AnyFLEX)
+    with open(template_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["entry_id", "contest_id", "contest_name", "entry_fee", "MVP - 1.5X Points", "AnyFLEX", "AnyFLEX", "AnyFLEX", "AnyFLEX", "AnyFLEX", "", "Instructions"])
+        writer.writerow(["1001", "2001", "Showdown GPP", "1.00", "", "", "", "", "", "", "", "Instructions text"])
+
+    cfg = SimOptimizerConfig(
+        players_csv=players_csv,
+        template_csv=template_csv,
+        output_csv=output_csv,
+        is_single_game=True,
+        num_selected_lineups=1,
+    )
+
+    loader = FanDuelDataLoader(cfg)
+    opt = loader.load_and_sanitize()
+
+    # 1. Verify 6 roster spots
+    assert opt.settings.get_total_players() == 6
+    assert len(opt.settings.positions) == 6
+
+    # 2. Verify MVP salary is 1.5x
+    allen_mvp = next(p for p in opt.player_pool.all_players if "MVP" in p.positions and "Allen" in p.full_name)
+    assert allen_mvp.salary == 19500.0
+
+    # 3. Optimize 1 lineup and verify 6 players
+    lineups = list(opt.optimize(1))
+    assert len(lineups) == 1
+    assert len(list(lineups[0].lineup)) == 6
+    assert lineups[0].salary_costs <= 60000.0
+
+    # 4. Export and verify all 10 columns are preserved
+    exporter = FanDuelTemplateExporter(cfg)
+    res = exporter.export_lineups(lineups)
+    assert res.exists()
+
+    with open(res, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        exported_header = next(reader)
+        assert len(exported_header) == 10
+        assert exported_header[4] == "MVP - 1.5X Points"
+        assert exported_header[5] == "AnyFLEX"
+        assert exported_header[9] == "AnyFLEX"
+
+        exported_row = next(reader)
+        assert len(exported_row) == 10
+        assert ":" in exported_row[4]  # MVP populated
+        assert ":" in exported_row[9]  # 5th AnyFLEX populated
+
+

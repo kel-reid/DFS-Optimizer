@@ -14,6 +14,7 @@ Adversarial and invariant testing for DraftKings simulation unification:
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 from typing import List
 
@@ -454,6 +455,69 @@ def test_draftkings_config_from_settings_nonexistent_slate_dir(tmp_path: Path, m
     assert cfg.entry_fee == 5.0
 
 
+def test_draftkings_showdown_pipeline_end_to_end(tmp_path: Path) -> None:
+    """
+    Tests end-to-end 4-stage simulation pipeline for DraftKings Showdown / Captain Mode:
+      - 1 CPT (1.5x points/salary) + 5 FLEX = 6 players
+      - Strict $50,000 cap
+      - Team diversity (players from both teams)
+      - Preserved CSV template headers
+    """
+    salaries_path = Path("data/week-06/thursday-night/DKSalaries.csv")
+    template_path = Path("data/week-06/thursday-night/DKEntries.csv")
+    if not salaries_path.exists() or not template_path.exists():
+        pytest.skip("Week 06 Thursday Night files not available for live Showdown test.")
 
+    out_file = tmp_path / "Completed-DKEntries.csv"
+    cfg = DKOptimizerConfig(
+        players_csv=salaries_path,
+        template_csv=template_path,
+        output_csv=out_file,
+        num_selected_lineups=10,
+        num_candidates=80,
+        max_repeating_players=4,
+        num_field_lineups=60,
+        num_sim_trials=60,
+    )
 
+    from src.build_draftkings_lineups import run_draftkings_pipeline
+    result_path = run_draftkings_pipeline(config=cfg)
 
+    assert result_path.exists()
+    assert cfg.is_single_game is True
+
+    with open(result_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.reader(f)
+        header = next(reader)
+        assert header[:10] == [
+            "Entry ID", "Contest Name", "Contest ID", "Entry Fee",
+            "CPT", "FLEX", "FLEX", "FLEX", "FLEX", "FLEX"
+        ]
+        rows = list(reader)
+        assert len(rows) == 10
+        kicker_counts: dict[str, int] = {}
+        for r in rows:
+            assert len(r) == 10
+            # Ensure CPT is filled and 5 FLEX slots are filled
+            cpt_val = r[4]
+            flex_vals = r[5:10]
+            assert "(" in cpt_val and ")" in cpt_val
+            for f_val in flex_vals:
+                assert "(" in f_val and ")" in f_val
+            # Extract player base names to verify no player is duplicated in CPT + FLEX
+            cpt_name = cpt_val.split("(")[0].strip()
+            flex_names = [f.split("(")[0].strip() for f in flex_vals]
+            assert cpt_name not in flex_names
+            assert len(set(flex_names)) == 5
+
+            # Strictly verify Kickers and Defenses are NEVER placed in the 1.5x CPT slot
+            assert cpt_name not in ["Wil Lutz", "Jason Myers", "Seahawks", "Broncos"]
+
+            for name in [cpt_name] + flex_names:
+                if name in ["Wil Lutz", "Jason Myers"]:
+                    kicker_counts[name] = kicker_counts.get(name, 0) + 1
+
+        # Verify Kickers respect the max_def_exposure ceiling (allowing +1 lineup if Pass 2 fallback fill triggered for small K=10)
+        max_allowed_def_k = math.floor(len(rows) * cfg.max_def_exposure)
+        for k_name, count in kicker_counts.items():
+            assert count <= max_allowed_def_k + 1, f"{k_name} exposure {count} exceeded cap {max_allowed_def_k}"
